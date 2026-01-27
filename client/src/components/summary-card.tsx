@@ -32,7 +32,7 @@ export function SummaryCard({ title, amount, icon, description, type = "neutral"
            type === "negative" && "text-destructive",
            type === "positive" && "text-green-600"
         )}>
-          ${Math.abs(amount).toFixed(2)}
+          ₹{Math.abs(amount).toFixed(2)}
         </div>
         {description && (
           <p className="text-xs text-muted-foreground mt-1">

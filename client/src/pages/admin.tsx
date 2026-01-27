@@ -5,18 +5,30 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useState } from "react";
-import { Lock, Unlock, Plus } from "lucide-react";
+import { Lock, Unlock, Plus, Trash2, UserPlus } from "lucide-react";
 import { format, subMonths } from "date-fns";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function AdminPage() {
-  const { categories, addCategory, monthStatus, lockMonth } = useApp();
+  const { categories, addCategory, monthStatus, lockMonth, users, addUser, removeUser } = useApp();
   const [newCategory, setNewCategory] = useState("");
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserRole, setNewUserRole] = useState<"admin" | "member">("member");
 
   const handleAddCategory = (e: React.FormEvent) => {
     e.preventDefault();
     if (newCategory.trim()) {
       addCategory(newCategory.trim());
       setNewCategory("");
+    }
+  };
+
+  const handleAddUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newUserName.trim()) {
+      addUser(newUserName.trim(), newUserRole);
+      setNewUserName("");
     }
   };
 
@@ -36,6 +48,60 @@ export default function AdminPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Member Management</CardTitle>
+            <CardDescription>Add or remove room members.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form onSubmit={handleAddUser} className="space-y-3">
+              <div className="flex gap-2">
+                <Input 
+                  placeholder="Full Name" 
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                />
+                <Select value={newUserRole} onValueChange={(v: any) => setNewUserRole(v)}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">Member</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button type="submit" size="icon">
+                  <UserPlus className="w-4 h-4" />
+                </Button>
+              </div>
+            </form>
+            <div className="space-y-2">
+              {users.map(user => (
+                <div key={user.id} className="flex items-center justify-between p-2 rounded-lg border bg-card">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={user.avatar} />
+                      <AvatarFallback>{user.name[0]}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-medium leading-none">{user.name}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeUser(user.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Expense Categories</CardTitle>

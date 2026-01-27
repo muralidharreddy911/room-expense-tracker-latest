@@ -189,7 +189,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                     <FormLabel>Amount</FormLabel>
                     <FormControl>
                       <div className="relative">
-                        <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
+                        <span className="absolute left-3 top-2.5 text-muted-foreground">₹</span>
                         <Input 
                           type="number" 
                           step="0.01" 
@@ -408,7 +408,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                       ? "text-destructive" 
                       : "text-green-600"
                    )}>
-                     ${(amount - (users.reduce((acc, u) => acc + (form.watch(`customSplits.${u.id}`) || 0), 0))).toFixed(2)}
+                     ₹{(amount - (users.reduce((acc, u) => acc + (form.watch(`customSplits.${u.id}`) || 0), 0))).toFixed(2)}
                    </span>
                  </div>
                  <p className="text-[0.8rem] font-medium text-destructive">

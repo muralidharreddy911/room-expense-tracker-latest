@@ -86,7 +86,7 @@ export default function SettlementsPage() {
             <CardTitle className="flex items-center gap-2">
               To Pay
               <span className="text-sm font-normal text-muted-foreground ml-auto">
-                Total: ${myDebts.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
+                Total: ₹{myDebts.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
               </span>
             </CardTitle>
             <CardDescription>People you owe money to</CardDescription>
@@ -113,7 +113,7 @@ export default function SettlementsPage() {
                       </div>
                       <div className="text-right">
                         <p className="text-lg font-bold font-display text-destructive mb-1">
-                          ${debt.amount.toFixed(2)}
+                          ₹{debt.amount.toFixed(2)}
                         </p>
                         <Button size="sm" variant="outline" onClick={() => handleSettle(debt.to, debt.amount)}>
                           Mark Paid
@@ -131,7 +131,7 @@ export default function SettlementsPage() {
              <CardTitle className="flex items-center gap-2">
               To Receive
               <span className="text-sm font-normal text-muted-foreground ml-auto">
-                Total: ${owedToMe.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
+                Total: ₹{owedToMe.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
               </span>
             </CardTitle>
             <CardDescription>People who owe you money</CardDescription>
@@ -158,7 +158,7 @@ export default function SettlementsPage() {
                       </div>
                       <div className="text-right">
                         <p className="text-lg font-bold font-display text-green-600">
-                          ${debt.amount.toFixed(2)}
+                          ₹{debt.amount.toFixed(2)}
                         </p>
                         {/* <Button size="sm" variant="ghost" disabled>
                           Remind
@@ -189,7 +189,7 @@ export default function SettlementsPage() {
                       <span className="font-medium text-sm">{to?.name}</span>
                     </div>
                     <div className="font-mono font-bold">
-                      ${settlement.amount.toFixed(2)}
+                      ₹{settlement.amount.toFixed(2)}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {format(parseISO(settlement.createdAt), 'MMM d, yyyy')}

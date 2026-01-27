@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Expense, Category, MonthStatus, Settlement } from '../lib/types';
+import { User, Expense, Category, MonthStatus, Settlement, Role } from '../lib/types';
 import { INITIAL_USERS, INITIAL_EXPENSES, INITIAL_CATEGORIES, INITIAL_MONTH_STATUS, INITIAL_SETTLEMENTS } from '../lib/mock-data';
 import { useToast } from './use-toast';
 
@@ -13,6 +13,8 @@ interface AppState {
   
   login: (userId: string) => void;
   logout: () => void;
+  addUser: (name: string, role: Role) => void;
+  removeUser: (userId: string) => void;
   addExpense: (expense: Expense) => void;
   updateExpense: (expense: Expense) => void;
   deleteExpense: (id: string) => void;
@@ -37,7 +39,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [users] = useState<User[]>(INITIAL_USERS);
+  const [users, setUsers] = useState<User[]>(() => {
+    const saved = localStorage.getItem('users');
+    return saved ? JSON.parse(saved) : INITIAL_USERS;
+  });
   
   const [expenses, setExpenses] = useState<Expense[]>(() => {
     const saved = localStorage.getItem('expenses');
@@ -61,6 +66,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Persistence effects
   useEffect(() => localStorage.setItem('currentUser', JSON.stringify(currentUser)), [currentUser]);
+  useEffect(() => localStorage.setItem('users', JSON.stringify(users)), [users]);
   useEffect(() => localStorage.setItem('expenses', JSON.stringify(expenses)), [expenses]);
   useEffect(() => localStorage.setItem('categories', JSON.stringify(categories)), [categories]);
   useEffect(() => localStorage.setItem('monthStatus', JSON.stringify(monthStatus)), [monthStatus]);
@@ -77,6 +83,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setCurrentUser(null);
     toast({ title: "Logged out" });
+  };
+
+  const addUser = (name: string, role: Role) => {
+    const newUser: User = {
+      id: `u${Date.now()}`,
+      username: name.toLowerCase().replace(/\s+/g, ''),
+      name,
+      role,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`
+    };
+    setUsers(prev => [...prev, newUser]);
+    toast({ title: "User added" });
+  };
+
+  const removeUser = (userId: string) => {
+    if (userId === currentUser?.id) {
+      toast({ title: "Cannot remove yourself", variant: "destructive" });
+      return;
+    }
+    setUsers(prev => prev.filter(u => u.id !== userId));
+    toast({ title: "User removed" });
   };
 
   const addExpense = (expense: Expense) => {
@@ -139,6 +166,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       settlements,
       login,
       logout,
+      addUser,
+      removeUser,
       addExpense,
       updateExpense,
       deleteExpense,

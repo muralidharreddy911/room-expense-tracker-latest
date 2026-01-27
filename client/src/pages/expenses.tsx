@@ -111,7 +111,7 @@ export default function ExpensesPage() {
                   <div className="flex items-start gap-4">
                     <div className="text-right">
                       <div className="text-xl font-bold font-display">
-                        ${expense.amount.toFixed(2)}
+                        ₹{expense.amount.toFixed(2)}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {expense.splitType === 'equal' ? 'Split Equally' : 'Custom Split'}
@@ -164,7 +164,7 @@ export default function ExpensesPage() {
                               {user?.name} {isPayer && "(Payer)"}
                             </p>
                             <p className="text-xs text-muted-foreground font-mono">
-                              ${split.amount.toFixed(2)}
+                              ₹{split.amount.toFixed(2)}
                             </p>
                           </div>
                         </div>

@@ -111,7 +111,7 @@ export default function Dashboard() {
                   fontSize={12} 
                   tickLine={false} 
                   axisLine={false} 
-                  tickFormatter={(value) => `$${value}`} 
+                  tickFormatter={(value) => `₹${value}`} 
                 />
                 <Tooltip 
                   cursor={{ fill: 'hsl(var(--accent)/0.1)' }}
@@ -155,7 +155,7 @@ export default function Dashboard() {
                         </p>
                       </div>
                       <div className="ml-auto font-medium font-display">
-                        ${expense.amount.toFixed(2)}
+                        ₹{expense.amount.toFixed(2)}
                       </div>
                     </div>
                   );
