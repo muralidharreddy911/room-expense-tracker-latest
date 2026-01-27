@@ -1,0 +1,200 @@
+# 🧾 Room Expense Split & Settlement Tracker
+## Project Requirement Document (Final)
+
+---
+
+## 1. Project Overview
+Build a web-based expense tracking system for bachelors living in a rented apartment.  
+The system should eliminate manual calculations by supporting flexible expense splitting, settlement tracking, monthly summaries, and strict data protection rules.
+
+The application must be simple, transparent, multi-user, and compatible with the Replit Free Plan.
+
+---
+
+## 2. Key Objectives
+- Reduce manual room expense calculations
+- Track daily and backdated expenses
+- Support dynamic and uneven expense splits
+- Track who paid, who owes, and settlement status
+- Provide monthly summaries for all users
+- Lock monthly data once finalized
+- Maintain data integrity and fairness
+
+---
+
+## 3. User Roles
+
+### 3.1 Admin
+- Create users and assign passwords
+- Manage expense categories
+- Close (lock) monthly bills
+- View all expenses and summaries
+
+### 3.2 Members (Roommates)
+- Add expenses
+- View all expenses
+- Participate in splits
+- Settle payments
+
+---
+
+## 4. Authentication & Authorization
+- Username and password based login
+- Admin generates users and assigns passwords
+- Role-based access (Admin / Member)
+- Simple session-based authentication (no paid services)
+
+---
+
+## 5. Member Management
+- Fixed list of members created by Admin
+- Members can be:
+  - Active
+  - Temporarily inactive (e.g., went to native)
+- Inactive members should not appear in expense splits by default
+
+---
+
+## 6. Expense Categories
+
+### Default Categories
+- Food
+- Groceries
+- Power
+- Water
+- Rent
+- Others
+
+### Category Rules
+- Admin can add new categories
+- Categories are reusable across months
+- Categories cannot be deleted if already used in expenses
+
+---
+
+## 7. Expense Entry
+
+Each expense must contain the following fields:
+
+| Field | Description |
+|------|-------------|
+| Date | User-selected (past or present date allowed) |
+| Category | From category list |
+| Description | Optional text |
+| Total Amount | Numeric value |
+| Paid By | One member |
+| Split Among | Selected members |
+| Split Type | Equal split or Custom split |
+| Month | Auto-derived from selected date |
+
+---
+
+## 8. Dynamic Participation & Split Logic
+
+### 8.1 Participant Selection
+- Each expense allows selecting only applicable members
+- Members not selected will not be charged
+
+### 8.2 Split Types
+
+#### Equal Split
+- Total amount divided equally among selected members
+- System auto-calculates per person amount
+
+#### Custom Split
+- Payer/admin can manually enter different amounts per person
+- Validation required: Sum of all individual amounts must equal total expense
+
+---
+
+## 9. Editing Rules
+- Only the payer (owner) of an expense can edit it
+- Editing allowed anytime within the same month
+- Editable fields:
+  - Amount
+  - Participants
+  - Split values
+  - Description
+  - Category
+  - Date (within same month)
+
+---
+
+## 10. Data Protection Rules
+
+| Action | Rule |
+|------|------|
+| Delete expense | Only the expense creator |
+| Edit expense | Only the payer, only if month is open |
+| Mark settlement | Only the payer |
+| Edit closed month | Not allowed |
+| View closed month | Allowed (read-only) |
+
+---
+
+## 11. Monthly Lock (Critical Feature)
+- Admin can close a month
+- Once closed:
+  - No edits allowed
+  - No deletes allowed
+  - No settlement status changes allowed
+  - Data becomes view-only for all users
+- Lock applies to all users including admin
+
+---
+
+## 12. Settlement Tracking
+- Each expense generates individual dues
+- Payer can mark payment status:
+  - Pending
+  - Paid
+- Settlement status visible to all users
+
+---
+
+## 13. Monthly Summary Dashboard
+For selected month:
+- Total expenses
+- Category-wise breakdown
+- Per-person summary:
+  - Total paid
+  - Total owed
+  - Net balance (To Pay / To Receive)
+- Highlight pending settlements
+
+---
+
+## 14. Expense Visibility
+- All users can view:
+  - All expenses
+  - All splits
+  - Settlement status
+- Full transparency, no private expenses
+
+---
+
+## 15. Historical Data
+- Month selector dropdown
+- Last 6 months data available
+- Older data auto-hidden or archived
+- Closed months shown in read-only mode
+
+---
+
+## 16. Tech Stack (Replit Free Compatible)
+
+### Frontend
+- HTML
+- CSS
+- Vanilla JavaScript
+
+### Backend
+- Flask (Python) OR Node.js (Express)
+
+### Database
+- SQLite (preferred)
+- JSON file storage as fallback
+
+---
+
+## 17. Suggested Folder Structure
