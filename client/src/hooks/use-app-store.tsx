@@ -1,0 +1,163 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { User, Expense, Category, MonthStatus, Settlement } from '../lib/types';
+import { INITIAL_USERS, INITIAL_EXPENSES, INITIAL_CATEGORIES, INITIAL_MONTH_STATUS, INITIAL_SETTLEMENTS } from '../lib/mock-data';
+import { useToast } from './use-toast';
+
+interface AppState {
+  currentUser: User | null;
+  users: User[];
+  expenses: Expense[];
+  categories: Category[];
+  monthStatus: MonthStatus[];
+  settlements: Settlement[];
+  
+  login: (userId: string) => void;
+  logout: () => void;
+  addExpense: (expense: Expense) => void;
+  updateExpense: (expense: Expense) => void;
+  deleteExpense: (id: string) => void;
+  addCategory: (name: string) => void;
+  lockMonth: (month: string) => void;
+  addSettlement: (settlement: Settlement) => void;
+  updateSettlement: (id: string, status: 'paid' | 'pending') => void;
+  
+  // Helpers
+  getExpensesByMonth: (month: string) => Expense[];
+  isMonthLocked: (month: string) => boolean;
+}
+
+const AppContext = createContext<AppState | undefined>(undefined);
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  const { toast } = useToast();
+  
+  // Load from localStorage or use initial mock data
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('currentUser');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const [users] = useState<User[]>(INITIAL_USERS);
+  
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    const saved = localStorage.getItem('expenses');
+    return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
+  });
+
+  const [categories, setCategories] = useState<Category[]>(() => {
+    const saved = localStorage.getItem('categories');
+    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
+  });
+
+  const [monthStatus, setMonthStatus] = useState<MonthStatus[]>(() => {
+    const saved = localStorage.getItem('monthStatus');
+    return saved ? JSON.parse(saved) : INITIAL_MONTH_STATUS;
+  });
+
+  const [settlements, setSettlements] = useState<Settlement[]>(() => {
+    const saved = localStorage.getItem('settlements');
+    return saved ? JSON.parse(saved) : INITIAL_SETTLEMENTS;
+  });
+
+  // Persistence effects
+  useEffect(() => localStorage.setItem('currentUser', JSON.stringify(currentUser)), [currentUser]);
+  useEffect(() => localStorage.setItem('expenses', JSON.stringify(expenses)), [expenses]);
+  useEffect(() => localStorage.setItem('categories', JSON.stringify(categories)), [categories]);
+  useEffect(() => localStorage.setItem('monthStatus', JSON.stringify(monthStatus)), [monthStatus]);
+  useEffect(() => localStorage.setItem('settlements', JSON.stringify(settlements)), [settlements]);
+
+  const login = (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    if (user) {
+      setCurrentUser(user);
+      toast({ title: `Welcome back, ${user.name}` });
+    }
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+    toast({ title: "Logged out" });
+  };
+
+  const addExpense = (expense: Expense) => {
+    setExpenses(prev => [expense, ...prev]);
+    toast({ title: "Expense added" });
+  };
+
+  const updateExpense = (updated: Expense) => {
+    setExpenses(prev => prev.map(e => e.id === updated.id ? updated : e));
+    toast({ title: "Expense updated" });
+  };
+
+  const deleteExpense = (id: string) => {
+    setExpenses(prev => prev.filter(e => e.id !== id));
+    toast({ title: "Expense deleted" });
+  };
+
+  const addCategory = (name: string) => {
+    const newCat: Category = { id: `c${Date.now()}`, name };
+    setCategories(prev => [...prev, newCat]);
+    toast({ title: "Category added" });
+  };
+
+  const lockMonth = (month: string) => {
+    setMonthStatus(prev => {
+      const existing = prev.find(m => m.month === month);
+      if (existing) {
+        return prev.map(m => m.month === month ? { ...m, isLocked: true } : m);
+      }
+      return [...prev, { month, isLocked: true }];
+    });
+    toast({ title: `Month ${month} locked` });
+  };
+
+  const addSettlement = (settlement: Settlement) => {
+    setSettlements(prev => [...prev, settlement]);
+    toast({ title: "Settlement recorded" });
+  };
+
+  const updateSettlement = (id: string, status: 'paid' | 'pending') => {
+    setSettlements(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+    toast({ title: `Settlement marked as ${status}` });
+  };
+
+  const getExpensesByMonth = (month: string) => {
+    return expenses.filter(e => e.month === month);
+  };
+
+  const isMonthLocked = (month: string) => {
+    return monthStatus.find(m => m.month === month)?.isLocked || false;
+  };
+
+  return (
+    <AppContext.Provider value={{
+      currentUser,
+      users,
+      expenses,
+      categories,
+      monthStatus,
+      settlements,
+      login,
+      logout,
+      addExpense,
+      updateExpense,
+      deleteExpense,
+      addCategory,
+      lockMonth,
+      addSettlement,
+      updateSettlement,
+      getExpensesByMonth,
+      isMonthLocked
+    }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export function useApp() {
+  const context = useContext(AppContext);
+  if (context === undefined) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
+}
