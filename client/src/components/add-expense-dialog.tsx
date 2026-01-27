@@ -411,9 +411,9 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                      ${(amount - (users.reduce((acc, u) => acc + (form.watch(`customSplits.${u.id}`) || 0), 0))).toFixed(2)}
                    </span>
                  </div>
-                 <FormMessage>
-                    {form.formState.errors.customSplits?.message}
-                 </FormMessage>
+                 <p className="text-[0.8rem] font-medium text-destructive">
+                    {(form.formState.errors.customSplits as any)?.message}
+                 </p>
                </div>
             )}
 

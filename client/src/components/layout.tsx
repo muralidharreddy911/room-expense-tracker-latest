@@ -44,7 +44,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           const isActive = location === item.href;
           return (
             <Link key={item.href} href={item.href}>
-              <a
+              <div
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                   isActive
@@ -55,7 +55,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               >
                 <item.icon className="w-4 h-4" />
                 {item.label}
-              </a>
+              </div>
             </Link>
           );
         })}
