@@ -18,9 +18,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Receipt, TrendingUp, Users, Wallet } from "lucide-react";
 
 export default function Dashboard() {
-  const { expenses, currentUser, users, getExpensesByMonth, categories } = useApp();
+  const { expenses, currentUser, users, getExpensesByMonth, categories, monthStatus } = useApp();
   
-  const currentMonth = format(new Date(), 'yyyy-MM');
+  // Get the most recent active (unlocked) month, or the latest month overall
+  const currentMonth = monthStatus
+    .filter(m => !m.isLocked)
+    .sort((a, b) => b.month.localeCompare(a.month))[0]?.month 
+    || monthStatus.sort((a, b) => b.month.localeCompare(a.month))[0]?.month
+    || format(new Date(), 'yyyy-MM');
+
   const monthExpenses = getExpensesByMonth(currentMonth);
 
   // Calculations
@@ -56,7 +62,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
-            Overview for {format(new Date(), 'MMMM yyyy')}
+            Overview for {format(parseISO(`${currentMonth}-01`), 'MMMM yyyy')}
           </p>
         </div>
         <AddExpenseDialog />
