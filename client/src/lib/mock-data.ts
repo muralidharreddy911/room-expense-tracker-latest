@@ -2,10 +2,10 @@ import { User, Category, Expense, MonthStatus, Settlement } from './types';
 import { subDays, format } from 'date-fns';
 
 export const INITIAL_USERS: User[] = [
-  { id: 'u1', username: 'admin', name: 'Alex (Admin)', role: 'admin', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex' },
-  { id: 'u2', username: 'ben', name: 'Ben', role: 'member', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ben' },
-  { id: 'u3', username: 'charlie', name: 'Charlie', role: 'member', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Charlie' },
-  { id: 'u4', username: 'david', name: 'David', role: 'member', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=David' },
+  { id: 'u1', username: 'admin', name: 'Alex (Admin)', role: 'admin', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex', password: 'admin' },
+  { id: 'u2', username: 'ben', name: 'Ben', role: 'member', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ben', password: 'password' },
+  { id: 'u3', username: 'charlie', name: 'Charlie', role: 'member', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Charlie', password: 'password' },
+  { id: 'u4', username: 'david', name: 'David', role: 'member', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=David', password: 'password' },
 ];
 
 export const INITIAL_CATEGORIES: Category[] = [

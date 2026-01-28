@@ -11,9 +11,9 @@ interface AppState {
   monthStatus: MonthStatus[];
   settlements: Settlement[];
   
-  login: (userId: string) => void;
+  login: (userId: string, password?: string) => void;
   logout: () => void;
-  addUser: (name: string, role: Role) => void;
+  addUser: (name: string, role: Role, password?: string) => void;
   removeUser: (userId: string) => void;
   addExpense: (expense: Expense) => void;
   updateExpense: (expense: Expense) => void;
@@ -73,9 +73,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => localStorage.setItem('monthStatus', JSON.stringify(monthStatus)), [monthStatus]);
   useEffect(() => localStorage.setItem('settlements', JSON.stringify(settlements)), [settlements]);
 
-  const login = (userId: string) => {
+  const login = (userId: string, password?: string) => {
     const user = users.find(u => u.id === userId);
     if (user) {
+      if (user.password && user.password !== password) {
+        toast({ title: "Invalid password", variant: "destructive" });
+        return;
+      }
       setCurrentUser(user);
       toast({ title: `Welcome back, ${user.name}` });
     }
@@ -86,13 +90,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast({ title: "Logged out" });
   };
 
-  const addUser = (name: string, role: Role) => {
+  const addUser = (name: string, role: Role, password?: string) => {
     const newUser: User = {
       id: `u${Date.now()}`,
       username: name.toLowerCase().replace(/\s+/g, ''),
       name,
       role,
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
+      password: password || 'password'
     };
     setUsers(prev => [...prev, newUser]);
     toast({ title: "User added" });

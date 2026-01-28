@@ -19,7 +19,7 @@ export default function AuthPage() {
     // Mock password check - in real app, verify properly
     // For prototype, just require any input
     if (password.length > 0) {
-      login(selectedUser);
+      login(selectedUser, password);
     } else {
       toast({
         title: "Error",

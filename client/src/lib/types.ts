@@ -6,6 +6,7 @@ export interface User {
   name: string;
   role: Role;
   avatar?: string;
+  password?: string;
 }
 
 export interface Category {

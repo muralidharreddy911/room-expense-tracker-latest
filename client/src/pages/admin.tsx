@@ -14,6 +14,7 @@ export default function AdminPage() {
   const { categories, addCategory, monthStatus, lockMonth, addMonth, users, addUser, removeUser } = useApp();
   const [newCategory, setNewCategory] = useState("");
   const [newUserName, setNewUserName] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<"admin" | "member">("member");
   const [newMonth, setNewMonth] = useState(format(new Date(), 'yyyy-MM'));
 
@@ -32,9 +33,10 @@ export default function AdminPage() {
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newUserName.trim()) {
-      addUser(newUserName.trim(), newUserRole);
+    if (newUserName.trim() && newUserPassword.trim()) {
+      addUser(newUserName.trim(), newUserRole, newUserPassword.trim());
       setNewUserName("");
+      setNewUserPassword("");
     }
   };
 
@@ -61,24 +63,34 @@ export default function AdminPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <form onSubmit={handleAddUser} className="space-y-3">
-              <div className="flex gap-2">
-                <Input 
-                  placeholder="Full Name" 
-                  value={newUserName}
-                  onChange={(e) => setNewUserName(e.target.value)}
-                />
-                <Select value={newUserRole} onValueChange={(v: any) => setNewUserRole(v)}>
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button type="submit" size="icon">
-                  <UserPlus className="w-4 h-4" />
-                </Button>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <Input 
+                    placeholder="Full Name" 
+                    value={newUserName}
+                    onChange={(e) => setNewUserName(e.target.value)}
+                  />
+                  <Select value={newUserRole} onValueChange={(v: any) => setNewUserRole(v)}>
+                    <SelectTrigger className="w-[120px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex gap-2">
+                  <Input 
+                    placeholder="Password" 
+                    type="password"
+                    value={newUserPassword}
+                    onChange={(e) => setNewUserPassword(e.target.value)}
+                  />
+                  <Button type="submit" size="icon">
+                    <UserPlus className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             </form>
             <div className="space-y-2">
@@ -91,7 +103,7 @@ export default function AdminPage() {
                     </Avatar>
                     <div>
                       <p className="text-sm font-medium leading-none">{user.name}</p>
-                      <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{user.role} • Pass: {user.password}</p>
                     </div>
                   </div>
                   <Button 
