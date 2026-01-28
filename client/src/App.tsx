@@ -26,12 +26,6 @@ function ProtectedRoute({ component: Component, adminOnly = false }: { component
 }
 
 function Router() {
-  const { currentUser } = useApp();
-
-  if (!currentUser) {
-    return <AuthPage />;
-  }
-
   return (
     <Switch>
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
