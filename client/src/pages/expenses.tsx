@@ -22,12 +22,15 @@ import {
 import { cn } from "@/lib/utils";
 
 export default function ExpensesPage() {
-  const { expenses, users, categories, currentUser, deleteExpense, isMonthLocked } = useApp();
+  const { expenses, users, categories, currentUser, deleteExpense, isMonthLocked, monthStatus } = useApp();
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
 
-  // Get unique months from expenses for the filter
-  const months = Array.from(new Set(expenses.map(e => e.month))).sort().reverse();
-  if (!months.includes(selectedMonth)) months.unshift(selectedMonth);
+  // Get unique months from monthStatus for the filter
+  const months = Array.from(new Set([
+    ...expenses.map(e => e.month),
+    ...monthStatus.map(m => m.month),
+    format(new Date(), 'yyyy-MM')
+  ])).sort().reverse();
 
   const filteredExpenses = expenses
     .filter(e => e.month === selectedMonth)

@@ -19,6 +19,7 @@ interface AppState {
   updateExpense: (expense: Expense) => void;
   deleteExpense: (id: string) => void;
   addCategory: (name: string) => void;
+  addMonth: (month: string) => void;
   lockMonth: (month: string) => void;
   addSettlement: (settlement: Settlement) => void;
   updateSettlement: (id: string, status: 'paid' | 'pending') => void;
@@ -127,6 +128,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast({ title: "Category added" });
   };
 
+  const addMonth = (month: string) => {
+    setMonthStatus(prev => {
+      if (prev.find(m => m.month === month)) return prev;
+      return [...prev, { month, isLocked: false }];
+    });
+    toast({ title: `Month ${month} added` });
+  };
+
   const lockMonth = (month: string) => {
     setMonthStatus(prev => {
       const existing = prev.find(m => m.month === month);
@@ -172,6 +181,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateExpense,
       deleteExpense,
       addCategory,
+      addMonth,
       lockMonth,
       addSettlement,
       updateSettlement,

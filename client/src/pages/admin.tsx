@@ -11,10 +11,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function AdminPage() {
-  const { categories, addCategory, monthStatus, lockMonth, users, addUser, removeUser } = useApp();
+  const { categories, addCategory, monthStatus, lockMonth, addMonth, users, addUser, removeUser } = useApp();
   const [newCategory, setNewCategory] = useState("");
   const [newUserName, setNewUserName] = useState("");
   const [newUserRole, setNewUserRole] = useState<"admin" | "member">("member");
+  const [newMonth, setNewMonth] = useState(format(new Date(), 'yyyy-MM'));
 
   const handleAddCategory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +23,11 @@ export default function AdminPage() {
       addCategory(newCategory.trim());
       setNewCategory("");
     }
+  };
+
+  const handleAddMonth = (e: React.FormEvent) => {
+    e.preventDefault();
+    addMonth(newMonth);
   };
 
   const handleAddUser = (e: React.FormEvent) => {
@@ -132,29 +138,41 @@ export default function AdminPage() {
         <Card>
           <CardHeader>
             <CardTitle>Month Management</CardTitle>
-            <CardDescription>Lock past months to prevent edits.</CardDescription>
+            <CardDescription>Add new months and lock completed ones.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {months.map(month => {
-              const status = monthStatus.find(m => m.month === month);
-              const isLocked = status?.isLocked;
+            <form onSubmit={handleAddMonth} className="flex gap-2">
+              <Input 
+                type="month"
+                value={newMonth}
+                onChange={(e) => setNewMonth(e.target.value)}
+              />
+              <Button type="submit" size="icon">
+                <Plus className="w-4 h-4" />
+              </Button>
+            </form>
+            <div className="space-y-2">
+              {monthStatus.sort((a, b) => b.month.localeCompare(a.month)).map(status => {
+                const month = status.month;
+                const isLocked = status.isLocked;
 
-              return (
-                <div key={month} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    {isLocked ? <Lock className="w-4 h-4 text-amber-600" /> : <Unlock className="w-4 h-4 text-green-600" />}
-                    <span className="font-medium font-mono">{month}</span>
+                return (
+                  <div key={month} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      {isLocked ? <Lock className="w-4 h-4 text-amber-600" /> : <Unlock className="w-4 h-4 text-green-600" />}
+                      <span className="font-medium font-mono">{month}</span>
+                    </div>
+                    {isLocked ? (
+                      <Button size="sm" variant="outline" disabled>Locked</Button>
+                    ) : (
+                      <Button size="sm" variant="secondary" onClick={() => lockMonth(month)}>
+                        Lock Month
+                      </Button>
+                    )}
                   </div>
-                  {isLocked ? (
-                    <Button size="sm" variant="outline" disabled>Locked</Button>
-                  ) : (
-                    <Button size="sm" variant="secondary" onClick={() => lockMonth(month)}>
-                      Lock Month
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
       </div>
