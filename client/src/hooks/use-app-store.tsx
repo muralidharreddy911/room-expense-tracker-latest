@@ -41,8 +41,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
 
   const [users, setUsers] = useState<User[]>(() => {
+    // Force a clear of old mock data if it exists in local storage
     const saved = localStorage.getItem('users');
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // If we find 'Alex (Admin)' in the saved data, we clear it to reset to Muralidhar
+      if (parsed.some((u: any) => u.name.includes('Alex'))) {
+        localStorage.clear();
+        return INITIAL_USERS;
+      }
+      return parsed;
+    }
+    return INITIAL_USERS;
   });
   
   const [expenses, setExpenses] = useState<Expense[]>(() => {
