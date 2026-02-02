@@ -99,12 +99,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setCurrentUser(null);
     localStorage.removeItem('currentUser');
-    localStorage.removeItem('users');
-    localStorage.removeItem('expenses');
-    localStorage.removeItem('categories');
-    localStorage.removeItem('monthStatus');
-    localStorage.removeItem('settlements');
-    window.location.reload();
+    toast({ title: "Logged out" });
   };
 
   const addUser = (name: string, role: Role, password?: string) => {
