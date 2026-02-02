@@ -20,7 +20,10 @@ function ProtectedRoute({ component: Component, adminOnly = false }: { component
   
   // If we're trying to access the admin page but we're not an admin, redirect to dashboard
   if (adminOnly && currentUser.role !== 'admin') {
-    window.location.href = '/';
+    // Check if we are already at the root to avoid infinite loops
+    if (window.location.pathname !== '/') {
+      window.location.replace('/');
+    }
     return null;
   }
 
