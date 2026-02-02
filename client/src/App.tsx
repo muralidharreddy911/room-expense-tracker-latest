@@ -17,7 +17,12 @@ function ProtectedRoute({ component: Component, adminOnly = false }: { component
   const { currentUser } = useApp();
 
   if (!currentUser) return <AuthPage />;
-  if (adminOnly && currentUser.role !== 'admin') return <NotFound />; // Or Redirect to Dashboard
+  
+  // If we're trying to access the admin page but we're not an admin, redirect to dashboard
+  if (adminOnly && currentUser.role !== 'admin') {
+    window.location.href = '/';
+    return null;
+  }
 
   return (
     <Layout>
