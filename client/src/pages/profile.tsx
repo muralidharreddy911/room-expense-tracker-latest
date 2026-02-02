@@ -6,9 +6,11 @@ import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ShieldCheck, Key } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ProfilePage() {
   const { currentUser, updateUserPassword } = useApp();
+  const { toast } = useToast();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -19,17 +21,29 @@ export default function ProfilePage() {
     if (!currentUser) return;
 
     if (currentPassword !== currentUser.password) {
-      alert("Current password is incorrect");
+      toast({
+        title: "Error",
+        description: "Current password is incorrect",
+        variant: "destructive"
+      });
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      alert("New passwords do not match");
+      toast({
+        title: "Error",
+        description: "New passwords do not match",
+        variant: "destructive"
+      });
       return;
     }
 
     if (newPassword.length < 4) {
-      alert("Password must be at least 4 characters long");
+      toast({
+        title: "Error",
+        description: "Password must be at least 4 characters long",
+        variant: "destructive"
+      });
       return;
     }
 
