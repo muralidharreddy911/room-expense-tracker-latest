@@ -8,6 +8,7 @@ import {
   Receipt,
   Scale,
   Settings,
+  UserCircle,
   LogOut,
   Menu,
   X
@@ -24,6 +25,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/expenses", label: "Expenses", icon: Receipt },
     { href: "/settlements", label: "Settlements", icon: Scale },
+    { href: "/profile", label: "My Profile", icon: UserCircle },
   ];
 
   if (currentUser?.role === 'admin') {

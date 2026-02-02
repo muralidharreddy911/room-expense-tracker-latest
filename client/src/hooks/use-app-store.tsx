@@ -23,6 +23,7 @@ interface AppState {
   lockMonth: (month: string) => void;
   addSettlement: (settlement: Settlement) => void;
   updateSettlement: (id: string, status: 'paid' | 'pending') => void;
+  updateUserPassword: (userId: string, newPassword: string) => void;
   
   // Helpers
   getExpensesByMonth: (month: string) => Expense[];
@@ -178,6 +179,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast({ title: `Settlement marked as ${status}` });
   };
 
+  const updateUserPassword = (userId: string, newPassword: string) => {
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: newPassword } : u));
+    if (currentUser?.id === userId) {
+      setCurrentUser(prev => prev ? { ...prev, password: newPassword } : null);
+    }
+    toast({ title: "Password updated successfully" });
+  };
+
   const getExpensesByMonth = (month: string) => {
     return expenses.filter(e => e.month === month);
   };
@@ -206,6 +215,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lockMonth,
       addSettlement,
       updateSettlement,
+      updateUserPassword,
       getExpensesByMonth,
       isMonthLocked
     }}>
