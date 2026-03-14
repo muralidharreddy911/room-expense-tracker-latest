@@ -59,7 +59,11 @@ app.use((req, res, next) => {
   next();
 });
 
-(async () => {
+let isSetup = false;
+export const setupApp = async () => {
+  if (isSetup) return;
+  isSetup = true;
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -74,6 +78,11 @@ app.use((req, res, next) => {
 
     return res.status(status).json({ message });
   });
+
+  // Specifically ignore vite and listen calls if running on Vercel
+  if (process.env.VERCEL) {
+    return;
+  }
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
@@ -100,4 +109,10 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
-})();
+};
+
+if (!process.env.VERCEL) {
+  setupApp();
+}
+
+export default app;
