@@ -3,37 +3,39 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { INITIAL_USERS, INITIAL_CATEGORIES } from "../client/src/lib/mock-data";
 
-export async function registerRoutes(
+export function registerRoutes(
   httpServer: Server,
   app: Express
-): Promise<Server> {
+): Server {
   
-  // Seed Defaults
-  try {
-    const defaultUsername = "Admin";
-    const existingAdmin = await storage.getUserByUsername(defaultUsername);
-    if (!existingAdmin) {
-      // Seed first user
-      await storage.createUser({
-        username: "Admin",
-        name: "Admin", // Assuming UI name field is populated
-        role: "admin",
-        password: "Admin123",
-        avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Admin"
-      });
-      console.log("Default Admin user successfully created.");
-      
-      // Also strictly seed the initial categories since otherwise they won't exist in new DB
-      const { categories } = await storage.getAppState();
-      if (categories.length === 0) {
-        for (const cat of INITIAL_CATEGORIES) {
-          await storage.createCategory({ name: cat.name, isDefault: cat.isDefault });
+  // Seed Defaults Asynchronously
+  (async () => {
+    try {
+      const defaultUsername = "Admin";
+      const existingAdmin = await storage.getUserByUsername(defaultUsername);
+      if (!existingAdmin) {
+        // Seed first user
+        await storage.createUser({
+          username: "Admin",
+          name: "Admin", // Assuming UI name field is populated
+          role: "admin",
+          password: "Admin123",
+          avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Admin"
+        });
+        console.log("Default Admin user successfully created.");
+        
+        // Also strictly seed the initial categories since otherwise they won't exist in new DB
+        const { categories } = await storage.getAppState();
+        if (categories.length === 0) {
+          for (const cat of INITIAL_CATEGORIES) {
+            await storage.createCategory({ name: cat.name, isDefault: cat.isDefault });
+          }
         }
       }
+    } catch (error) {
+      console.error("Failed to seed default Admin user:", error);
     }
-  } catch (error) {
-    console.error("Failed to seed default Admin user:", error);
-  }
+  })();
 
   // --- API ROUTES ---
 
