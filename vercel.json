@@ -3,9 +3,18 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist/public",
   "framework": "vite",
+  "functions": {
+    "api/[...path].ts": {
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/api/:path*",
+      "destination": "/api/[...path]"
+    },
+    {
+      "source": "/((?!api).*)",
       "destination": "/index.html"
     }
   ]
