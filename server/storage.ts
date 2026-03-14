@@ -1,11 +1,33 @@
-import { users, type User, type InsertUser } from "@shared/schema";
+import { users, categories, monthStatus, settlements, expenses, type User, type InsertUser } from "@shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 
 export interface IStorage {
+  // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserPassword(id: string, password: string): Promise<void>;
+  deleteUser(id: string): Promise<void>;
+
+  // Combined State Fetch
+  getAppState(): Promise<any>;
+
+  // Expenses
+  createExpense(expense: any): Promise<any>;
+  updateExpense(id: string, expense: any): Promise<any>;
+  deleteExpense(id: string): Promise<void>;
+
+  // Categories
+  createCategory(category: any): Promise<any>;
+
+  // Month Status
+  upsertMonthStatus(month: string, isLocked: boolean): Promise<any>;
+
+  // Settlements
+  createSettlement(settlement: any): Promise<any>;
+  updateSettlementStatus(id: string, status: string): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -19,9 +41,79 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async updateUserPassword(id: string, password: string): Promise<void> {
+    await db.update(users).set({ password }).where(eq(users.id, id));
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
+  }
+
+  async getAppState(): Promise<any> {
+    const [allUsers, allCategories, allExpenses, allMonthStatus, allSettlements] = await Promise.all([
+      db.select().from(users),
+      db.select().from(categories),
+      db.select().from(expenses),
+      db.select().from(monthStatus),
+      db.select().from(settlements)
+    ]);
+
+    return {
+      users: allUsers,
+      categories: allCategories,
+      expenses: allExpenses,
+      monthStatus: allMonthStatus,
+      settlements: allSettlements
+    };
+  }
+
+  async createExpense(expense: any): Promise<any> {
+    const [created] = await db.insert(expenses).values(expense).returning();
+    return created;
+  }
+
+  async updateExpense(id: string, expense: any): Promise<any> {
+    const [updated] = await db.update(expenses).set(expense).where(eq(expenses.id, id)).returning();
+    return updated;
+  }
+
+  async deleteExpense(id: string): Promise<void> {
+    await db.delete(expenses).where(eq(expenses.id, id));
+  }
+
+  async createCategory(category: any): Promise<any> {
+    const [created] = await db.insert(categories).values(category).returning();
+    return created;
+  }
+
+  async upsertMonthStatus(month: string, isLocked: boolean): Promise<any> {
+    const [existing] = await db.select().from(monthStatus).where(eq(monthStatus.month, month));
+    if (existing) {
+      const [updated] = await db.update(monthStatus).set({ isLocked }).where(eq(monthStatus.id, existing.id)).returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(monthStatus).values({ month, isLocked }).returning();
+      return created;
+    }
+  }
+
+  async createSettlement(settlement: any): Promise<any> {
+    const [created] = await db.insert(settlements).values(settlement).returning();
+    return created;
+  }
+
+  async updateSettlementStatus(id: string, status: string): Promise<any> {
+    const [updated] = await db.update(settlements).set({ status }).where(eq(settlements.id, id)).returning();
+    return updated;
   }
 }
 

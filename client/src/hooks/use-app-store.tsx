@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, Expense, Category, MonthStatus, Settlement, Role } from '../lib/types';
-import { INITIAL_USERS, INITIAL_EXPENSES, INITIAL_CATEGORIES, INITIAL_MONTH_STATUS, INITIAL_SETTLEMENTS } from '../lib/mock-data';
 import { useToast } from './use-toast';
 
 interface AppState {
@@ -11,19 +10,19 @@ interface AppState {
   monthStatus: MonthStatus[];
   settlements: Settlement[];
   
-  login: (userId: string, password?: string) => void;
+  login: (username: string, password?: string) => void;
   logout: () => void;
-  addUser: (name: string, role: Role, password?: string) => void;
-  removeUser: (userId: string) => void;
-  addExpense: (expense: Expense) => void;
-  updateExpense: (expense: Expense) => void;
-  deleteExpense: (id: string) => void;
-  addCategory: (name: string) => void;
-  addMonth: (month: string) => void;
-  lockMonth: (month: string) => void;
-  addSettlement: (settlement: Settlement) => void;
-  updateSettlement: (id: string, status: 'paid' | 'pending') => void;
-  updateUserPassword: (userId: string, newPassword: string) => void;
+  addUser: (name: string, role: Role, password?: string) => Promise<void>;
+  removeUser: (userId: string) => Promise<void>;
+  addExpense: (expense: Expense) => Promise<void>;
+  updateExpense: (expense: Expense) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
+  addCategory: (name: string) => Promise<void>;
+  addMonth: (month: string) => Promise<void>;
+  lockMonth: (month: string) => Promise<void>;
+  addSettlement: (settlement: Settlement) => Promise<void>;
+  updateSettlement: (id: string, status: 'paid' | 'pending') => Promise<void>;
+  updateUserPassword: (userId: string, newPassword: string) => Promise<void>;
   
   // Helpers
   getExpensesByMonth: (month: string) => Expense[];
@@ -35,151 +34,218 @@ const AppContext = createContext<AppState | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   
-  // Load from localStorage or use initial mock data
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('currentUser');
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [users, setUsers] = useState<User[]>(() => {
-    // Force a clear of old mock data if it exists in local storage
-    const saved = localStorage.getItem('users');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // If we find 'Alex (Admin)' in the saved data, we clear it to reset to Muralidhar
-      if (parsed.some((u: any) => u.name.includes('Alex'))) {
-        localStorage.clear();
-        return INITIAL_USERS;
-      }
-      return parsed;
+  const [users, setUsers] = useState<User[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [monthStatus, setMonthStatus] = useState<MonthStatus[]>([]);
+  const [settlements, setSettlements] = useState<Settlement[]>([]);
+
+  // Fetch from the Backend API entirely
+  useEffect(() => {
+    fetch('/api/state')
+      .then(r => r.json())
+      .then(data => {
+        setUsers(data.users || []);
+        setCategories(data.categories || []);
+        setExpenses(data.expenses || []);
+        setMonthStatus(data.monthStatus || []);
+        setSettlements(data.settlements || []);
+      })
+      .catch(err => console.error("Failed to fetch initial state:", err));
+  }, []);
+
+  // Sync current user caching
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('currentUser');
     }
-    return INITIAL_USERS;
-  });
-  
-  const [expenses, setExpenses] = useState<Expense[]>(() => {
-    const saved = localStorage.getItem('expenses');
-    return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
-  });
+  }, [currentUser]);
 
-  const [categories, setCategories] = useState<Category[]>(() => {
-    const saved = localStorage.getItem('categories');
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
-  });
-
-  const [monthStatus, setMonthStatus] = useState<MonthStatus[]>(() => {
-    const saved = localStorage.getItem('monthStatus');
-    return saved ? JSON.parse(saved) : INITIAL_MONTH_STATUS;
-  });
-
-  const [settlements, setSettlements] = useState<Settlement[]>(() => {
-    const saved = localStorage.getItem('settlements');
-    return saved ? JSON.parse(saved) : INITIAL_SETTLEMENTS;
-  });
-
-  // Persistence effects
-  useEffect(() => localStorage.setItem('currentUser', JSON.stringify(currentUser)), [currentUser]);
-  useEffect(() => localStorage.setItem('users', JSON.stringify(users)), [users]);
-  useEffect(() => localStorage.setItem('expenses', JSON.stringify(expenses)), [expenses]);
-  useEffect(() => localStorage.setItem('categories', JSON.stringify(categories)), [categories]);
-  useEffect(() => localStorage.setItem('monthStatus', JSON.stringify(monthStatus)), [monthStatus]);
-  useEffect(() => localStorage.setItem('settlements', JSON.stringify(settlements)), [settlements]);
-
-  const login = (userId: string, password?: string) => {
-    const user = users.find(u => u.id === userId);
+  const login = (username: string, password?: string) => {
+    // Note: The UI may pass `userId` or `username` based on dropdowns. The backend uses `username`.
+    // Searching by either ID or Username to be safe.
+    const user = users.find(u => u.username === username || u.name === username || u.id === username);
     if (user) {
       if (user.password && user.password !== password) {
         toast({ title: "Invalid password", variant: "destructive" });
         return;
       }
       setCurrentUser(user);
-      toast({ title: `Welcome back, ${user.name}` });
+      toast({ title: `Welcome back, ${user.name || user.username}` });
+    } else {
+      toast({ title: "User not found", variant: "destructive" });
     }
   };
 
   const logout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('currentUser');
     toast({ title: "Logged out" });
   };
 
-  const addUser = (name: string, role: Role, password?: string) => {
-    const newUser: User = {
-      id: `u${Date.now()}`,
+  const addUser = async (name: string, role: Role, password?: string) => {
+    const payload = {
       username: name.toLowerCase().replace(/\s+/g, ''),
       name,
       role,
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
       password: password || 'password'
     };
-    setUsers(prev => [...prev, newUser]);
-    toast({ title: "User added" });
+    
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      const newUser = await res.json();
+      setUsers(prev => [...prev, newUser]);
+      toast({ title: "User added" });
+    } else {
+      toast({ title: "Failed to add user", variant: "destructive" });
+    }
   };
 
-  const removeUser = (userId: string) => {
+  const removeUser = async (userId: string) => {
     if (userId === currentUser?.id) {
       toast({ title: "Cannot remove yourself", variant: "destructive" });
       return;
     }
-    setUsers(prev => prev.filter(u => u.id !== userId));
-    toast({ title: "User removed" });
-  };
-
-  const addExpense = (expense: Expense) => {
-    setExpenses(prev => [expense, ...prev]);
-    toast({ title: "Expense added" });
-  };
-
-  const updateExpense = (updated: Expense) => {
-    setExpenses(prev => prev.map(e => e.id === updated.id ? updated : e));
-    toast({ title: "Expense updated" });
-  };
-
-  const deleteExpense = (id: string) => {
-    setExpenses(prev => prev.filter(e => e.id !== id));
-    toast({ title: "Expense deleted" });
-  };
-
-  const addCategory = (name: string) => {
-    const newCat: Category = { id: `c${Date.now()}`, name };
-    setCategories(prev => [...prev, newCat]);
-    toast({ title: "Category added" });
-  };
-
-  const addMonth = (month: string) => {
-    setMonthStatus(prev => {
-      if (prev.find(m => m.month === month)) return prev;
-      return [...prev, { month, isLocked: false }];
-    });
-    toast({ title: `Month ${month} added` });
-  };
-
-  const lockMonth = (month: string) => {
-    setMonthStatus(prev => {
-      const existing = prev.find(m => m.month === month);
-      if (existing) {
-        return prev.map(m => m.month === month ? { ...m, isLocked: true } : m);
-      }
-      return [...prev, { month, isLocked: true }];
-    });
-    toast({ title: `Month ${month} locked` });
-  };
-
-  const addSettlement = (settlement: Settlement) => {
-    setSettlements(prev => [...prev, settlement]);
-    toast({ title: "Settlement recorded" });
-  };
-
-  const updateSettlement = (id: string, status: 'paid' | 'pending') => {
-    setSettlements(prev => prev.map(s => s.id === id ? { ...s, status } : s));
-    toast({ title: `Settlement marked as ${status}` });
-  };
-
-  const updateUserPassword = (userId: string, newPassword: string) => {
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: newPassword } : u));
-    if (currentUser?.id === userId) {
-      setCurrentUser(prev => prev ? { ...prev, password: newPassword } : null);
+    const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+    if (res.ok) {
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      toast({ title: "User removed" });
     }
-    toast({ title: "Password updated successfully" });
+  };
+
+  const addExpense = async (expense: Expense) => {
+    // Generate ISO strings and format for PG
+    const payload = { ...expense, createdAt: new Date().toISOString() };
+    const res = await fetch('/api/expenses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      const newExp = await res.json();
+      setExpenses(prev => [newExp, ...prev]);
+      toast({ title: "Expense added" });
+    }
+  };
+
+  const updateExpense = async (updated: Expense) => {
+    const res = await fetch(`/api/expenses/${updated.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated)
+    });
+    if (res.ok) {
+      const savedExp = await res.json();
+      setExpenses(prev => prev.map(e => e.id === savedExp.id ? savedExp : e));
+      toast({ title: "Expense updated" });
+    }
+  };
+
+  const deleteExpense = async (id: string) => {
+    const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setExpenses(prev => prev.filter(e => e.id !== id));
+      toast({ title: "Expense deleted" });
+    }
+  };
+
+  const addCategory = async (name: string) => {
+    const payload = { name, isDefault: false };
+    const res = await fetch('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      const newCat = await res.json();
+      setCategories(prev => [...prev, newCat]);
+      toast({ title: "Category added" });
+    }
+  };
+
+  const addMonth = async (month: string) => {
+    const existing = monthStatus.find(m => m.month === month);
+    if (existing) return;
+    
+    const res = await fetch('/api/months', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, isLocked: false })
+    });
+    if (res.ok) {
+      const newStatus = await res.json();
+      setMonthStatus(prev => [...prev, newStatus]);
+      toast({ title: `Month ${month} added` });
+    }
+  };
+
+  const lockMonth = async (month: string) => {
+    const res = await fetch('/api/months', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, isLocked: true })
+    });
+    if (res.ok) {
+      const newStatus = await res.json();
+      setMonthStatus(prev => {
+        const remaining = prev.filter(m => m.id !== newStatus.id && m.month !== newStatus.month);
+        return [...remaining, newStatus];
+      });
+      toast({ title: `Month ${month} locked` });
+    }
+  };
+
+  const addSettlement = async (settlement: Settlement) => {
+    const payload = { ...settlement, createdAt: new Date().toISOString() };
+    const res = await fetch('/api/settlements', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      const newSet = await res.json();
+      setSettlements(prev => [...prev, newSet]);
+      toast({ title: "Settlement recorded" });
+    }
+  };
+
+  const updateSettlement = async (id: string, status: 'paid' | 'pending') => {
+    const res = await fetch(`/api/settlements/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    if (res.ok) {
+      const savedSet = await res.json();
+      setSettlements(prev => prev.map(s => s.id === id ? savedSet : s));
+      toast({ title: `Settlement marked as ${status}` });
+    }
+  };
+
+  const updateUserPassword = async (userId: string, newPassword: string) => {
+    const res = await fetch(`/api/users/${userId}/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: newPassword })
+    });
+    if (res.ok) {
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: newPassword } : u));
+      if (currentUser?.id === userId) {
+        setCurrentUser(prev => prev ? { ...prev, password: newPassword } : null);
+      }
+      toast({ title: "Password updated successfully" });
+    }
   };
 
   const getExpensesByMonth = (month: string) => {
