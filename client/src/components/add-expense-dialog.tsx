@@ -53,17 +53,6 @@ const expenseSchema = z.object({
   splitType: z.enum(["equal", "custom"]),
   participants: z.array(z.string()).min(1, "Select at least one participant"),
   customSplits: z.record(z.string(), z.coerce.number()).optional(),
-}).refine((data) => {
-  if (data.splitType === 'custom' && data.customSplits) {
-    const totalSplit = Object.entries(data.customSplits)
-      .filter(([userId]) => data.participants.includes(userId))
-      .reduce((sum, [_, amount]) => sum + amount, 0);
-    return Math.abs(totalSplit - data.amount) < 0.1; // Allow small floating point diff
-  }
-  return true;
-}, {
-  message: "Sum of custom splits must equal total amount",
-  path: ["customSplits"],
 });
 
 type ExpenseFormValues = z.infer<typeof expenseSchema>;
@@ -105,12 +94,34 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
   const splitType = form.watch("splitType");
   const amount = form.watch("amount");
   const participants = form.watch("participants");
+  const customSplits = form.watch("customSplits");
 
-  const onSubmit = (data: ExpenseFormValues) => {
+  // Calculate remaining correctly — only sum amounts for selected participants
+  const participantSplitTotal = participants.reduce((acc, userId) => {
+    const val = Number(customSplits?.[userId]);
+    return acc + (isNaN(val) ? 0 : val);
+  }, 0);
+  const remaining = Number(amount || 0) - participantSplitTotal;
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const onSubmit = async (data: ExpenseFormValues) => {
     const month = format(data.date, 'yyyy-MM');
     if (isMonthLocked(month)) {
       form.setError("date", { message: "This month is locked and cannot be edited." });
       return;
+    }
+
+    // Validate custom splits don't exceed total
+    if (data.splitType === 'custom') {
+      const total = data.participants.reduce((acc, userId) => {
+        const val = Number(data.customSplits?.[userId]);
+        return acc + (isNaN(val) ? 0 : val);
+      }, 0);
+      if (total > data.amount + 0.01) {
+        form.setError("customSplits" as any, { message: `Split total (₹${total.toFixed(2)}) exceeds expense amount (₹${data.amount.toFixed(2)})` });
+        return;
+      }
     }
 
     let splits: Split[] = [];
@@ -121,16 +132,16 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
         userId,
         amount: Number(splitAmount.toFixed(2))
       }));
-      // Fix rounding errors on the last person
+      // Fix rounding errors
       const currentSum = splits.reduce((sum, s) => sum + s.amount, 0);
-      const diff = data.amount - currentSum;
+      const diff = Number((data.amount - currentSum).toFixed(2));
       if (diff !== 0 && splits.length > 0) {
-        splits[0].amount += diff;
+        splits[0].amount = Number((splits[0].amount + diff).toFixed(2));
       }
     } else {
       splits = data.participants.map(userId => ({
         userId,
-        amount: data.customSplits?.[userId] || 0
+        amount: Number(Number(data.customSplits?.[userId] || 0).toFixed(2))
       }));
     }
 
@@ -147,8 +158,15 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
       createdAt: new Date().toISOString(),
     };
 
-    addExpense(newExpense);
-    setOpen(false);
+    try {
+      setIsSubmitting(true);
+      await addExpense(newExpense);
+      setOpen(false);
+    } catch (err) {
+      console.error("Failed to add expense:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -404,12 +422,20 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                  ))}
                  <div className="pt-2 text-right text-sm">
                    Remaining: <span className={cn("font-bold", 
-                    (amount - (users.reduce((acc, u) => acc + (form.watch(`customSplits.${u.id}`) || 0), 0))) !== 0 
+                    remaining < -0.01
                       ? "text-destructive" 
+                      : remaining > 0.01
+                      ? "text-amber-500"
                       : "text-green-600"
                    )}>
-                     ₹{(amount - (users.reduce((acc, u) => acc + (form.watch(`customSplits.${u.id}`) || 0), 0))).toFixed(2)}
+                     ₹{remaining.toFixed(2)}
                    </span>
+                   {remaining > 0.01 && (
+                     <span className="ml-2 text-xs text-amber-500">(unallocated)</span>
+                   )}
+                   {remaining < -0.01 && (
+                     <span className="ml-2 text-xs text-destructive">(exceeds total!)</span>
+                   )}
                  </div>
                  <p className="text-[0.8rem] font-medium text-destructive">
                     {(form.formState.errors.customSplits as any)?.message}
@@ -418,7 +444,9 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
             )}
 
             <DialogFooter>
-              <Button type="submit" className="w-full sm:w-auto">Add Expense</Button>
+              <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
+                {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : "Add Expense"}
+              </Button>
             </DialogFooter>
           </form>
         </Form>
