@@ -46,6 +46,7 @@ export interface Settlement {
 }
 
 export interface MonthStatus {
+  id?: string;
   month: string; // YYYY-MM
   isLocked: boolean;
 }

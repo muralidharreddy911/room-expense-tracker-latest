@@ -9,6 +9,7 @@ interface AppState {
   categories: Category[];
   monthStatus: MonthStatus[];
   settlements: Settlement[];
+  isLoading: boolean;
   
   login: (username: string, password?: string) => void;
   logout: () => void;
@@ -44,11 +45,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Fetch from the Backend API entirely
   useEffect(() => {
+    setIsLoading(true);
     fetch('/api/state')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`API returned ${r.status}`);
+        return r.json();
+      })
       .then(data => {
         setUsers(data.users || []);
         setCategories(data.categories || []);
@@ -56,7 +62,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMonthStatus(data.monthStatus || []);
         setSettlements(data.settlements || []);
       })
-      .catch(err => console.error("Failed to fetch initial state:", err));
+      .catch(err => console.error("Failed to fetch initial state:", err))
+      .finally(() => setIsLoading(false));
   }, []);
 
   // Sync current user caching
@@ -199,7 +206,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (res.ok) {
       const newStatus = await res.json();
       setMonthStatus(prev => {
-        const remaining = prev.filter(m => m.id !== newStatus.id && m.month !== newStatus.month);
+        const remaining = prev.filter(m => m.month !== newStatus.month);
         return [...remaining, newStatus];
       });
       toast({ title: `Month ${month} locked` });
@@ -264,6 +271,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       categories,
       monthStatus,
       settlements,
+      isLoading,
       login,
       logout,
       addUser,
