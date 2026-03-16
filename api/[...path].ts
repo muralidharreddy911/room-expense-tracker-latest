@@ -158,12 +158,31 @@ app.delete("/api/users/:id", async (req: Request, res: Response) => {
 app.put("/api/users/:id/password", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
-    await sql`UPDATE users SET password = ${req.body.password} WHERE id = ${req.params.id}`;
-    res.json({ success: true });
+    const { password } = req.body;
+
+    if (!password || typeof password !== 'string' || password.trim().length < 4) {
+      return res.status(400).json({ error: "Password must be at least 4 characters long." });
+    }
+
+    // Update and return the row so the frontend can confirm it was updated
+    const [updated] = await sql`
+      UPDATE users SET password = ${password.trim()}
+      WHERE id = ${req.params.id}
+      RETURNING id, username, name, role, avatar
+    `;
+
+    if (!updated) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    console.log(`✅ Password updated for user ${updated.username}`);
+    res.json({ success: true, user: updated });
   } catch (e: any) {
+    console.error("PUT /api/users/:id/password error:", e);
     res.status(500).json({ error: e.message });
   }
 });
+
 
 // POST /api/expenses
 app.post("/api/expenses", async (req: Request, res: Response) => {

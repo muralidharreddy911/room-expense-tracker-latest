@@ -24,7 +24,7 @@ interface AppState {
   lockMonth: (month: string) => Promise<void>;
   addSettlement: (settlement: Settlement) => Promise<void>;
   updateSettlement: (id: string, status: 'paid' | 'pending') => Promise<void>;
-  updateUserPassword: (userId: string, newPassword: string) => Promise<void>;
+  updateUserPassword: (userId: string, newPassword: string) => Promise<boolean>;
   
   // Helpers
   getExpensesByMonth: (month: string) => Expense[];
@@ -270,18 +270,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateUserPassword = async (userId: string, newPassword: string) => {
+  const updateUserPassword = async (userId: string, newPassword: string): Promise<boolean> => {
     const res = await fetch(`/api/users/${userId}/password`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: newPassword })
     });
     if (res.ok) {
+      // Update the user list in state so login still works in same session
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: newPassword } : u));
+      // Also update cached currentUser so stale password check doesn't confuse things
       if (currentUser?.id === userId) {
-        setCurrentUser(prev => prev ? { ...prev, password: newPassword } : null);
+        const updatedUser = { ...currentUser, password: newPassword };
+        setCurrentUser(updatedUser);
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
       }
-      toast({ title: "Password updated successfully" });
+      toast({ title: "Password updated successfully", description: "Please log in again with your new password." });
+      return true;
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast({ title: "Failed to update password", description: err.error || "Please try again.", variant: "destructive" });
+      return false;
     }
   };
 
