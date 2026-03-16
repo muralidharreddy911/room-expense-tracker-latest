@@ -223,13 +223,22 @@ app.delete("/api/expenses/:id", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
 
-    // 1. Fetch the expense to know which month it belongs to
-    const [expense] = await sql`SELECT id, month FROM expenses WHERE id = ${req.params.id}`;
+    // 1. Fetch the expense to validate ownership and month
+    const [expense] = await sql`SELECT id, month, paid_by FROM expenses WHERE id = ${req.params.id}`;
     if (!expense) {
       return res.status(404).json({ error: "Expense not found." });
     }
 
-    // 2. Check if that month is locked
+    // 2. Validate ownership — only the payer can delete their expense
+    const requestingUserId = req.query.userId as string;
+    if (!requestingUserId) {
+      return res.status(400).json({ error: "userId query parameter is required." });
+    }
+    if (expense.paid_by !== requestingUserId) {
+      return res.status(403).json({ error: "Unauthorized: You can only delete your own expenses." });
+    }
+
+    // 3. Check if that month is locked
     const [monthLock] = await sql`
       SELECT is_locked FROM month_status WHERE month = ${expense.month} LIMIT 1
     `;
@@ -237,15 +246,16 @@ app.delete("/api/expenses/:id", async (req: Request, res: Response) => {
       return res.status(403).json({ error: `Month ${expense.month} is locked. Deletion is not allowed.` });
     }
 
-    // 3. Proceed with deletion
+    // 4. Proceed with deletion
     await sql`DELETE FROM expenses WHERE id = ${req.params.id}`;
-    console.log(`✅ Expense ${req.params.id} deleted from month ${expense.month}`);
+    console.log(`✅ Expense ${req.params.id} deleted by user ${requestingUserId}`);
     res.json({ success: true });
   } catch (e: any) {
     console.error("DELETE /api/expenses/:id error:", e);
     res.status(500).json({ error: e.message });
   }
 });
+
 
 
 // POST /api/categories

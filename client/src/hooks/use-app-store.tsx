@@ -161,7 +161,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteExpense = async (id: string) => {
-    const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+    if (!currentUser) return;
+    const res = await fetch(`/api/expenses/${id}?userId=${encodeURIComponent(currentUser.id)}`, { method: 'DELETE' });
     if (res.ok) {
       setExpenses(prev => prev.filter(e => e.id !== id));
       toast({ title: "Expense deleted" });

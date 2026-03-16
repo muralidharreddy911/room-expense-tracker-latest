@@ -117,11 +117,10 @@ export default function ExpensesPage() {
               const category = categories.find(c => c.id === expense.categoryId);
               const isDeleting = deletingId === expense.id;
 
-              // Delete is allowed for ANY user when month is NOT locked
-              // Admin can always delete; members can delete expenses they paid for
-              const isAdmin = currentUser?.role === 'admin';
+              // Delete is ONLY allowed to the user who paid (created) the expense,
+              // and only when the month is NOT locked. Admin gets no extra privilege here.
               const isPayer = currentUser?.id === expense.paidBy;
-              const canDelete = !isLocked && (isAdmin || isPayer);
+              const canDelete = !isLocked && isPayer;
 
               return (
                 <Card
