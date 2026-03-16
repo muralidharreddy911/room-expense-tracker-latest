@@ -7,7 +7,7 @@ import { AddExpenseDialog } from "@/components/add-expense-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, AlertCircle } from "lucide-react";
+import { Trash2, AlertCircle, Lock, Loader2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,12 +20,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function ExpensesPage() {
   const { expenses, users, categories, currentUser, deleteExpense, isMonthLocked, monthStatus } = useApp();
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Get unique months from monthStatus for the filter
+  // Get unique months from monthStatus + existing expenses + current month
   const months = Array.from(new Set([
     ...expenses.map(e => e.month),
     ...monthStatus.map(m => m.month),
@@ -38,148 +40,231 @@ export default function ExpensesPage() {
 
   const isLocked = isMonthLocked(selectedMonth);
 
+  const handleDelete = async (expenseId: string) => {
+    setDeletingId(expenseId);
+    try {
+      await deleteExpense(expenseId);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const totalForMonth = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Expenses</h1>
-          <p className="text-muted-foreground">
-            Manage and track shared bills.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select Month" />
-            </SelectTrigger>
-            <SelectContent>
-              {months.map(month => (
-                <SelectItem key={month} value={month}>
-                  {format(parseISO(`${month}-01`), 'MMMM yyyy')}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {!isLocked && <AddExpenseDialog />}
-        </div>
-      </div>
-
-      {isLocked && (
-        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-4 rounded-lg flex items-center gap-2 text-amber-800 dark:text-amber-200">
-          <AlertCircle className="w-5 h-5" />
-          <p className="text-sm font-medium">This month is locked. No further edits or additions allowed.</p>
-        </div>
-      )}
-
-      <div className="space-y-4">
-        {filteredExpenses.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
-            No expenses recorded for this month.
+    <TooltipProvider>
+      <div className="space-y-6 animate-in fade-in duration-500">
+        {/* ── Header ── */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Expenses</h1>
+            <p className="text-muted-foreground">
+              Manage and track shared bills.
+            </p>
           </div>
-        ) : (
-          filteredExpenses.map((expense) => {
-            const payer = users.find(u => u.id === expense.paidBy);
-            const category = categories.find(c => c.id === expense.categoryId);
-            const canDelete = !isLocked && currentUser?.id === expense.paidBy;
+          <div className="flex items-center gap-2">
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select Month" />
+              </SelectTrigger>
+              <SelectContent>
+                {months.map(month => (
+                  <SelectItem key={month} value={month}>
+                    {format(parseISO(`${month}-01`), 'MMMM yyyy')}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!isLocked && <AddExpenseDialog />}
+          </div>
+        </div>
 
-            return (
-              <Card key={expense.id} className="overflow-hidden hover:border-primary/50 transition-colors group">
-                <CardHeader className="p-4 sm:p-6 bg-secondary/10 flex flex-row items-start justify-between space-y-0">
-                  <div className="flex items-start gap-4">
-                    <div className="flex flex-col items-center justify-center bg-background border rounded-lg p-2 w-14 h-14 shadow-sm">
-                      <span className="text-xs font-bold text-muted-foreground uppercase">
-                        {format(parseISO(expense.date), 'MMM')}
-                      </span>
-                      <span className="text-xl font-bold font-display">
-                        {format(parseISO(expense.date), 'dd')}
-                      </span>
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                        {expense.description}
-                        <Badge variant="outline" className="font-normal text-xs bg-background">
-                          {category?.name}
-                        </Badge>
-                      </CardTitle>
-                      <div className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
-                        Paid by 
-                        <Avatar className="w-5 h-5 ml-1 mr-1 border border-border">
-                          <AvatarImage src={payer?.avatar} />
-                          <AvatarFallback>{payer?.name[0]}</AvatarFallback>
-                        </Avatar>
-                        <span className="font-medium text-foreground">{payer?.name}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-4">
-                    <div className="text-right">
-                      <div className="text-xl font-bold font-display">
-                        ₹{expense.amount.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {expense.splitType === 'equal' ? 'Split Equally' : 'Custom Split'}
-                      </div>
-                    </div>
-                    {canDelete && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Expense?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This action cannot be undone. This will permanently remove this transaction.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={() => deleteExpense(expense.id)}
-                              className="bg-destructive hover:bg-destructive/90"
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="p-4 bg-muted/5 border-t text-sm">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {expense.splits.map((split) => {
-                      const user = users.find(u => u.id === split.userId);
-                      const isPayer = split.userId === expense.paidBy;
-                      
-                      if (split.amount === 0) return null;
-
-                      return (
-                        <div key={split.userId} className="flex items-center gap-2 p-2 rounded bg-background border border-border/50">
-                          <Avatar className="w-6 h-6">
-                            <AvatarImage src={user?.avatar} />
-                            <AvatarFallback>{user?.name[0]}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <p className="truncate text-xs font-medium">
-                              {user?.name} {isPayer && "(Payer)"}
-                            </p>
-                            <p className="text-xs text-muted-foreground font-mono">
-                              ₹{split.amount.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })
+        {/* ── Locked Month Banner ── */}
+        {isLocked && (
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-4 rounded-lg flex items-center gap-3 text-amber-800 dark:text-amber-200">
+            <Lock className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm font-medium">
+              This month is locked by Admin. No expenses can be added, edited, or deleted.
+            </p>
+          </div>
         )}
+
+        {/* ── Month Summary ── */}
+        {filteredExpenses.length > 0 && (
+          <div className="flex items-center justify-between px-1">
+            <span className="text-sm text-muted-foreground">
+              {filteredExpenses.length} expense{filteredExpenses.length !== 1 ? 's' : ''} this month
+            </span>
+            <span className="text-sm font-semibold">
+              Total: <span className="font-mono">₹{totalForMonth.toFixed(2)}</span>
+            </span>
+          </div>
+        )}
+
+        {/* ── Expense List ── */}
+        <div className="space-y-4">
+          {filteredExpenses.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
+              <AlertCircle className="w-8 h-8 mx-auto mb-3 opacity-40" />
+              <p className="font-medium">No expenses recorded for this month.</p>
+              {!isLocked && (
+                <p className="text-xs mt-1">Click "Add Expense" to get started.</p>
+              )}
+            </div>
+          ) : (
+            filteredExpenses.map((expense) => {
+              const payer = users.find(u => u.id === expense.paidBy);
+              const category = categories.find(c => c.id === expense.categoryId);
+              const isDeleting = deletingId === expense.id;
+
+              // Delete is allowed for ANY user when month is NOT locked
+              // Admin can always delete; members can delete expenses they paid for
+              const isAdmin = currentUser?.role === 'admin';
+              const isPayer = currentUser?.id === expense.paidBy;
+              const canDelete = !isLocked && (isAdmin || isPayer);
+
+              return (
+                <Card
+                  key={expense.id}
+                  className={cn(
+                    "overflow-hidden transition-all group",
+                    isDeleting ? "opacity-50 scale-[0.99]" : "hover:border-primary/50"
+                  )}
+                >
+                  <CardHeader className="p-4 sm:p-6 bg-secondary/10 flex flex-row items-start justify-between space-y-0">
+                    {/* ── Left: Date + Info ── */}
+                    <div className="flex items-start gap-4 flex-1 min-w-0">
+                      {/* Date badge */}
+                      <div className="flex flex-col items-center justify-center bg-background border rounded-lg p-2 w-14 h-14 shadow-sm flex-shrink-0">
+                        <span className="text-xs font-bold text-muted-foreground uppercase">
+                          {format(parseISO(expense.date), 'MMM')}
+                        </span>
+                        <span className="text-xl font-bold font-display">
+                          {format(parseISO(expense.date), 'dd')}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-lg font-semibold flex items-center gap-2 flex-wrap">
+                          <span className="truncate">{expense.description}</span>
+                          <Badge variant="outline" className="font-normal text-xs bg-background flex-shrink-0">
+                            {category?.name ?? "—"}
+                          </Badge>
+                          {isLocked && (
+                            <Badge variant="secondary" className="font-normal text-xs flex-shrink-0 gap-1">
+                              <Lock className="w-2.5 h-2.5" /> Locked
+                            </Badge>
+                          )}
+                        </CardTitle>
+                        <div className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
+                          Paid by
+                          <Avatar className="w-5 h-5 ml-1 mr-1 border border-border">
+                            <AvatarImage src={payer?.avatar} />
+                            <AvatarFallback>{payer?.name?.[0]}</AvatarFallback>
+                          </Avatar>
+                          <span className="font-medium text-foreground">{payer?.name}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Right: Amount + Actions ── */}
+                    <div className="flex items-start gap-2 flex-shrink-0">
+                      <div className="text-right">
+                        <div className="text-xl font-bold font-display">
+                          ₹{expense.amount.toFixed(2)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {expense.splitType === 'equal' ? 'Split Equally' : 'Custom Split'}
+                        </div>
+                      </div>
+
+                      {/* Delete button – shown only if allowed */}
+                      {canDelete ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                              disabled={isDeleting}
+                            >
+                              {isDeleting
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : <Trash2 className="w-4 h-4" />
+                              }
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Expense?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete{" "}
+                                <strong>"{expense.description}"</strong> worth{" "}
+                                <strong>₹{expense.amount.toFixed(2)}</strong>?
+                                <br /><br />
+                                This action cannot be undone. All split balances will be recalculated automatically.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(expense.id)}
+                                className="bg-destructive hover:bg-destructive/90"
+                              >
+                                Confirm Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : isLocked ? (
+                        /* Locked month: show grayed-out lock icon as tooltip */
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="h-8 w-8 flex items-center justify-center text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Lock className="w-4 h-4" />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>This month is locked. Deletion is not allowed.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </div>
+                  </CardHeader>
+
+                  {/* ── Splits footer ── */}
+                  <CardContent className="p-4 bg-muted/5 border-t text-sm">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {expense.splits.map((split) => {
+                        const user = users.find(u => u.id === split.userId);
+                        const isPayer = split.userId === expense.paidBy;
+
+                        if (split.amount === 0) return null;
+
+                        return (
+                          <div key={split.userId} className="flex items-center gap-2 p-2 rounded bg-background border border-border/50">
+                            <Avatar className="w-6 h-6">
+                              <AvatarImage src={user?.avatar} />
+                              <AvatarFallback>{user?.name?.[0]}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <p className="truncate text-xs font-medium">
+                                {user?.name} {isPayer && <span className="text-primary">(Payer)</span>}
+                              </p>
+                              <p className="text-xs text-muted-foreground font-mono">
+                                ₹{split.amount.toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }

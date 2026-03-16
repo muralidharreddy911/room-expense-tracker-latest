@@ -165,8 +165,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (res.ok) {
       setExpenses(prev => prev.filter(e => e.id !== id));
       toast({ title: "Expense deleted" });
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast({
+        title: "Cannot delete expense",
+        description: err.error || "An error occurred.",
+        variant: "destructive"
+      });
     }
   };
+
 
   const addCategory = async (name: string) => {
     // Duplicate check on frontend

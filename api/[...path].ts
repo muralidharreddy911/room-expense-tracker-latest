@@ -222,12 +222,31 @@ app.put("/api/expenses/:id", async (req: Request, res: Response) => {
 app.delete("/api/expenses/:id", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
+
+    // 1. Fetch the expense to know which month it belongs to
+    const [expense] = await sql`SELECT id, month FROM expenses WHERE id = ${req.params.id}`;
+    if (!expense) {
+      return res.status(404).json({ error: "Expense not found." });
+    }
+
+    // 2. Check if that month is locked
+    const [monthLock] = await sql`
+      SELECT is_locked FROM month_status WHERE month = ${expense.month} LIMIT 1
+    `;
+    if (monthLock?.is_locked) {
+      return res.status(403).json({ error: `Month ${expense.month} is locked. Deletion is not allowed.` });
+    }
+
+    // 3. Proceed with deletion
     await sql`DELETE FROM expenses WHERE id = ${req.params.id}`;
+    console.log(`✅ Expense ${req.params.id} deleted from month ${expense.month}`);
     res.json({ success: true });
   } catch (e: any) {
+    console.error("DELETE /api/expenses/:id error:", e);
     res.status(500).json({ error: e.message });
   }
 });
+
 
 // POST /api/categories
 app.post("/api/categories", async (req: Request, res: Response) => {
