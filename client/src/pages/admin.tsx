@@ -2,16 +2,26 @@ import { useApp } from "@/hooks/use-app-store";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { useState } from "react";
-import { Lock, Unlock, Plus, Trash2, UserPlus } from "lucide-react";
+import { Lock, Unlock, Plus, Trash2, UserPlus, Tag } from "lucide-react";
 import { format, subMonths } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function AdminPage() {
-  const { categories, addCategory, monthStatus, lockMonth, addMonth, users, addUser, removeUser } = useApp();
+  const { categories, addCategory, deleteCategory, monthStatus, lockMonth, addMonth, users, addUser, removeUser } = useApp();
   const [newCategory, setNewCategory] = useState("");
   const [newUserName, setNewUserName] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
@@ -40,12 +50,6 @@ export default function AdminPage() {
     }
   };
 
-  const months = [
-    format(new Date(), 'yyyy-MM'),
-    format(subMonths(new Date(), 1), 'yyyy-MM'),
-    format(subMonths(new Date(), 2), 'yyyy-MM'),
-  ];
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
@@ -56,6 +60,7 @@ export default function AdminPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
+        {/* ── Member Management ── */}
         <Card>
           <CardHeader>
             <CardTitle>Member Management</CardTitle>
@@ -65,8 +70,8 @@ export default function AdminPage() {
             <form onSubmit={handleAddUser} className="space-y-3">
               <div className="flex flex-col gap-2">
                 <div className="flex gap-2">
-                  <Input 
-                    placeholder="Full Name" 
+                  <Input
+                    placeholder="Full Name"
                     value={newUserName}
                     onChange={(e) => setNewUserName(e.target.value)}
                   />
@@ -81,8 +86,8 @@ export default function AdminPage() {
                   </Select>
                 </div>
                 <div className="flex gap-2">
-                  <Input 
-                    placeholder="Password" 
+                  <Input
+                    placeholder="Password"
                     type="password"
                     value={newUserPassword}
                     onChange={(e) => setNewUserPassword(e.target.value)}
@@ -103,32 +108,53 @@ export default function AdminPage() {
                     </Avatar>
                     <div>
                       <p className="text-sm font-medium leading-none">{user.name}</p>
-                      <p className="text-xs text-muted-foreground capitalize">{user.role} • Pass: {user.password}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
                     </div>
                   </div>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => removeUser(user.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remove Member?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Are you sure you want to remove <strong>{user.name}</strong>? This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive hover:bg-destructive/90"
+                          onClick={() => removeUser(user.id)}
+                        >
+                          Remove
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
 
+        {/* ── Expense Categories ── */}
         <Card>
           <CardHeader>
             <CardTitle>Expense Categories</CardTitle>
-            <CardDescription>Add new categories for expenses.</CardDescription>
+            <CardDescription>Add or remove expense categories.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <form onSubmit={handleAddCategory} className="flex gap-2">
-              <Input 
-                placeholder="New Category Name" 
+              <Input
+                placeholder="New Category Name"
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
               />
@@ -138,15 +164,53 @@ export default function AdminPage() {
             </form>
             <div className="flex flex-wrap gap-2">
               {categories.map(cat => (
-                <div key={cat.id} className="px-3 py-1 bg-secondary rounded-full text-sm flex items-center gap-2">
-                  {cat.name}
-                  {cat.isDefault && <span className="text-[10px] text-muted-foreground uppercase tracking-widest opacity-50">Default</span>}
+                <div
+                  key={cat.id}
+                  className="group flex items-center gap-1.5 px-3 py-1.5 bg-secondary rounded-full text-sm border border-transparent hover:border-destructive/30 transition-colors"
+                >
+                  <Tag className="w-3 h-3 text-muted-foreground" />
+                  <span>{cat.name}</span>
+                  {cat.isDefault && (
+                    <Badge variant="outline" className="text-[10px] h-4 px-1 ml-1 opacity-60">default</Badge>
+                  )}
+                  {/* Delete button with confirmation */}
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <button
+                        className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                        title="Delete category"
+                        type="button"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Category?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Are you sure you want to delete the category <strong>"{cat.name}"</strong>?
+                          <br /><br />
+                          If this category is used in existing expenses, the deletion will be prevented.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive hover:bg-destructive/90"
+                          onClick={() => deleteCategory(cat.id)}
+                        >
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
 
+        {/* ── Month Management ── */}
         <Card>
           <CardHeader>
             <CardTitle>Month Management</CardTitle>
@@ -154,7 +218,7 @@ export default function AdminPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <form onSubmit={handleAddMonth} className="flex gap-2">
-              <Input 
+              <Input
                 type="month"
                 value={newMonth}
                 onChange={(e) => setNewMonth(e.target.value)}
@@ -177,9 +241,23 @@ export default function AdminPage() {
                     {isLocked ? (
                       <Button size="sm" variant="outline" disabled>Locked</Button>
                     ) : (
-                      <Button size="sm" variant="secondary" onClick={() => lockMonth(month)}>
-                        Lock Month
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="secondary">Lock Month</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Lock Month?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Locking <strong>{month}</strong> will prevent any further edits or expense additions. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => lockMonth(month)}>Lock</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     )}
                   </div>
                 );

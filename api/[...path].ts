@@ -61,9 +61,13 @@ async function seedDefaults() {
       amount REAL NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
       month TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      settled_at TEXT
     )
   `;
+  // Add settled_at column to existing settlements tables that may not have it
+  await sql`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS settled_at TEXT`;
+
 
   // Seed Admin user if not exists
   const existing = await sql`SELECT id FROM users WHERE username = 'Admin' LIMIT 1`;
@@ -211,11 +215,32 @@ app.post("/api/categories", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
     const { name, isDefault } = req.body;
+    // Duplicate check (case-insensitive)
+    const existing = await sql`SELECT id FROM categories WHERE LOWER(name) = LOWER(${name}) LIMIT 1`;
+    if (existing.length > 0) {
+      return res.status(409).json({ error: "Category already exists." });
+    }
     const [item] = await sql`
       INSERT INTO categories (name, is_default) VALUES (${name}, ${isDefault || false})
       RETURNING *, is_default AS "isDefault"
     `;
     res.json(item);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/categories/:id
+app.delete("/api/categories/:id", async (req: Request, res: Response) => {
+  try {
+    const sql = getSql();
+    // Safety: check if used in any expense
+    const usedIn = await sql`SELECT id FROM expenses WHERE category_id = ${req.params.id} LIMIT 1`;
+    if (usedIn.length > 0) {
+      return res.status(409).json({ error: "Category is used in existing expenses and cannot be deleted." });
+    }
+    await sql`DELETE FROM categories WHERE id = ${req.params.id}`;
+    res.json({ success: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -257,9 +282,14 @@ app.post("/api/settlements", async (req: Request, res: Response) => {
 app.put("/api/settlements/:id", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
+    const newStatus = req.body.status;
+    const settledAt = newStatus === 'paid' ? new Date().toISOString() : null;
     const [item] = await sql`
-      UPDATE settlements SET status = ${req.body.status} WHERE id = ${req.params.id}
-      RETURNING *, from_user AS "fromUser", to_user AS "toUser", created_at AS "createdAt"
+      UPDATE settlements 
+      SET status = ${newStatus},
+          settled_at = ${settledAt}
+      WHERE id = ${req.params.id}
+      RETURNING *, from_user AS "fromUser", to_user AS "toUser", created_at AS "createdAt", settled_at AS "settledAt"
     `;
     res.json(item);
   } catch (e: any) {

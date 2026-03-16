@@ -19,6 +19,7 @@ interface AppState {
   updateExpense: (expense: Expense) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   addCategory: (name: string) => Promise<void>;
+  deleteCategory: (categoryId: string) => Promise<void>;
   addMonth: (month: string) => Promise<void>;
   lockMonth: (month: string) => Promise<void>;
   addSettlement: (settlement: Settlement) => Promise<void>;
@@ -168,6 +169,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addCategory = async (name: string) => {
+    // Duplicate check on frontend
+    const duplicate = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (duplicate) {
+      toast({ title: "Category already exists.", variant: "destructive" });
+      return;
+    }
     const payload = { name, isDefault: false };
     const res = await fetch('/api/categories', {
       method: 'POST',
@@ -178,6 +185,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const newCat = await res.json();
       setCategories(prev => [...prev, newCat]);
       toast({ title: "Category added" });
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast({ title: err.error || "Failed to add category", variant: "destructive" });
+    }
+  };
+
+  const deleteCategory = async (categoryId: string) => {
+    // Safety: check if category is used in any expense
+    const isUsed = expenses.some(e => e.categoryId === categoryId);
+    if (isUsed) {
+      toast({
+        title: "Cannot delete category",
+        description: "This category is used in existing expenses. Remove those expenses first.",
+        variant: "destructive"
+      });
+      return;
+    }
+    const res = await fetch(`/api/categories/${categoryId}`, { method: 'DELETE' });
+    if (res.ok) {
+      setCategories(prev => prev.filter(c => c.id !== categoryId));
+      toast({ title: "Category deleted" });
+    } else {
+      toast({ title: "Failed to delete category", variant: "destructive" });
     }
   };
 
@@ -280,6 +310,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateExpense,
       deleteExpense,
       addCategory,
+      deleteCategory,
       addMonth,
       lockMonth,
       addSettlement,
