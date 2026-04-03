@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export default function AdminPage() {
-  const { categories, addCategory, deleteCategory, monthStatus, lockMonth, addMonth, users, addUser, removeUser } = useApp();
+  const { categories, addCategory, deleteCategory, monthStatus, lockMonth, unlockMonth, addMonth, users, addUser, removeUser } = useApp();
   const [newCategory, setNewCategory] = useState("");
   const [newUserName, setNewUserName] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
@@ -239,7 +239,23 @@ export default function AdminPage() {
                       <span className="font-medium font-mono">{month}</span>
                     </div>
                     {isLocked ? (
-                      <Button size="sm" variant="outline" disabled>Locked</Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="outline" className="border-amber-500 text-amber-700 hover:bg-amber-50">Unlock</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Unlock Month?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Unlocking <strong>{month}</strong> will allow expenses and settlements to be added again.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => unlockMonth(month)}>Unlock</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     ) : (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>

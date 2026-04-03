@@ -32,6 +32,7 @@ export interface Expense {
   paidBy: string; // userId
   splitType: SplitType;
   splits: Split[];
+  serialNo?: number; // Auto-incremental display ID
   createdAt: string;
 }
 

@@ -1,13 +1,14 @@
 import { useApp } from "@/hooks/use-app-store";
 import { format, parseISO } from "date-fns";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AddExpenseDialog } from "@/components/add-expense-dialog";
+import { EditExpenseDialog } from "@/components/edit-expense-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, AlertCircle, Lock, Loader2 } from "lucide-react";
+import { Trash2, AlertCircle, Lock, Loader2, Pencil, RefreshCw, CalendarX } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,24 +22,37 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Expense } from "@/lib/types";
 
 export default function ExpensesPage() {
-  const { expenses, users, categories, currentUser, deleteExpense, isMonthLocked, monthStatus } = useApp();
-  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const {
+    expenses, users, categories, currentUser,
+    deleteExpense, isMonthLocked, availableMonths, refreshState,
+  } = useApp();
 
-  // Get unique months from monthStatus + existing expenses + current month
-  const months = Array.from(new Set([
-    ...expenses.map(e => e.month),
-    ...monthStatus.map(m => m.month),
-    format(new Date(), 'yyyy-MM')
-  ])).sort().reverse();
+  // ── Month selector — only shows admin-created months (no auto calendar month) ──
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [expenseToEdit, setExpenseToEdit] = useState<Expense | null>(null);
+
+  // Set default to most recent available month once loaded
+  useEffect(() => {
+    if (availableMonths.length > 0 && !selectedMonth) {
+      setSelectedMonth(availableMonths[0]); // already sorted newest first
+    }
+  }, [availableMonths]);
+
+  const isLocked = selectedMonth ? isMonthLocked(selectedMonth) : false;
 
   const filteredExpenses = expenses
     .filter(e => e.month === selectedMonth)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-  const isLocked = isMonthLocked(selectedMonth);
+    .sort((a, b) => {
+      // Sort by serial number (ascending) — date-independent
+      const sa = a.serialNo ?? 0;
+      const sb = b.serialNo ?? 0;
+      if (sa !== sb) return sa - sb;
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
 
   const handleDelete = async (expenseId: string) => {
     setDeletingId(expenseId);
@@ -51,31 +65,65 @@ export default function ExpensesPage() {
 
   const totalForMonth = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
+  // No months created yet
+  if (availableMonths.length === 0) {
+    return (
+      <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Expenses</h1>
+            <p className="text-muted-foreground">Manage and track shared bills.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={refreshState}>
+            <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+          </Button>
+        </div>
+        <div className="border rounded-xl p-12 flex flex-col items-center gap-4 text-center bg-muted/30 border-dashed text-muted-foreground">
+          <CalendarX className="w-10 h-10 opacity-40" />
+          <div>
+            <p className="font-semibold text-lg">No months available</p>
+            <p className="text-sm mt-1 opacity-75">
+              Ask the Admin to create a month from Admin → Month Management before adding expenses.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <TooltipProvider>
       <div className="space-y-6 animate-in fade-in duration-500">
+
         {/* ── Header ── */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Expenses</h1>
-            <p className="text-muted-foreground">
-              Manage and track shared bills.
-            </p>
+            <p className="text-muted-foreground">Manage and track shared bills.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Month Selector */}
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Select Month" />
               </SelectTrigger>
               <SelectContent>
-                {months.map(month => (
+                {availableMonths.map(month => (
                   <SelectItem key={month} value={month}>
-                    {format(parseISO(`${month}-01`), 'MMMM yyyy')}
+                    <span className="flex items-center gap-2">
+                      {format(parseISO(`${month}-01`), 'MMMM yyyy')}
+                      {isMonthLocked(month) && <Lock className="w-3 h-3 text-amber-500" />}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {!isLocked && <AddExpenseDialog />}
+
+            <Button variant="outline" size="icon" onClick={refreshState} title="Refresh">
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+
+            {!isLocked && selectedMonth && <AddExpenseDialog />}
           </div>
         </div>
 
@@ -117,10 +165,10 @@ export default function ExpensesPage() {
               const category = categories.find(c => c.id === expense.categoryId);
               const isDeleting = deletingId === expense.id;
 
-              // Delete is ONLY allowed to the user who paid (created) the expense,
-              // and only when the month is NOT locked. Admin gets no extra privilege here.
+              // Only the payer can delete/edit, only in unlocked months
               const isPayer = currentUser?.id === expense.paidBy;
               const canDelete = !isLocked && isPayer;
+              const canEdit = !isLocked && isPayer;
 
               return (
                 <Card
@@ -131,17 +179,21 @@ export default function ExpensesPage() {
                   )}
                 >
                   <CardHeader className="p-4 sm:p-6 bg-secondary/10 flex flex-row items-start justify-between space-y-0">
-                    {/* ── Left: Date + Info ── */}
+                    {/* ── Left: Serial + Date + Info ── */}
                     <div className="flex items-start gap-4 flex-1 min-w-0">
-                      {/* Date badge */}
+                      {/* Serial + Date badge */}
                       <div className="flex flex-col items-center justify-center bg-background border rounded-lg p-2 w-14 h-14 shadow-sm flex-shrink-0">
+                        <span className="text-[10px] font-bold text-primary/70 uppercase tracking-wide">
+                          #{expense.serialNo ?? '—'}
+                        </span>
                         <span className="text-xs font-bold text-muted-foreground uppercase">
                           {format(parseISO(expense.date), 'MMM')}
                         </span>
-                        <span className="text-xl font-bold font-display">
+                        <span className="text-lg font-bold font-display leading-tight">
                           {format(parseISO(expense.date), 'dd')}
                         </span>
                       </div>
+
                       <div className="flex-1 min-w-0">
                         <CardTitle className="text-lg font-semibold flex items-center gap-2 flex-wrap">
                           <span className="truncate">{expense.description}</span>
@@ -166,7 +218,7 @@ export default function ExpensesPage() {
                     </div>
 
                     {/* ── Right: Amount + Actions ── */}
-                    <div className="flex items-start gap-2 flex-shrink-0">
+                    <div className="flex items-start gap-1 flex-shrink-0">
                       <div className="text-right">
                         <div className="text-xl font-bold font-display">
                           ₹{expense.amount.toFixed(2)}
@@ -176,7 +228,24 @@ export default function ExpensesPage() {
                         </div>
                       </div>
 
-                      {/* Delete button – shown only if allowed */}
+                      {/* Edit button */}
+                      {canEdit ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => setExpenseToEdit(expense)}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p>Edit expense</p></TooltipContent>
+                        </Tooltip>
+                      ) : null}
+
+                      {/* Delete button */}
                       {canDelete ? (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
@@ -215,16 +284,13 @@ export default function ExpensesPage() {
                           </AlertDialogContent>
                         </AlertDialog>
                       ) : isLocked ? (
-                        /* Locked month: show grayed-out lock icon as tooltip */
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div className="h-8 w-8 flex items-center justify-center text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity">
                               <Lock className="w-4 h-4" />
                             </div>
                           </TooltipTrigger>
-                          <TooltipContent>
-                            <p>This month is locked. Deletion is not allowed.</p>
-                          </TooltipContent>
+                          <TooltipContent><p>This month is locked. Deletion is not allowed.</p></TooltipContent>
                         </Tooltip>
                       ) : null}
                     </div>
@@ -233,12 +299,10 @@ export default function ExpensesPage() {
                   {/* ── Splits footer ── */}
                   <CardContent className="p-4 bg-muted/5 border-t text-sm">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {expense.splits.map((split) => {
+                      {expense.splits.map(split => {
                         const user = users.find(u => u.id === split.userId);
-                        const isPayer = split.userId === expense.paidBy;
-
+                        const isSplitPayer = split.userId === expense.paidBy;
                         if (split.amount === 0) return null;
-
                         return (
                           <div key={split.userId} className="flex items-center gap-2 p-2 rounded bg-background border border-border/50">
                             <Avatar className="w-6 h-6">
@@ -247,7 +311,7 @@ export default function ExpensesPage() {
                             </Avatar>
                             <div className="flex-1 min-w-0">
                               <p className="truncate text-xs font-medium">
-                                {user?.name} {isPayer && <span className="text-primary">(Payer)</span>}
+                                {user?.name} {isSplitPayer && <span className="text-primary">(Payer)</span>}
                               </p>
                               <p className="text-xs text-muted-foreground font-mono">
                                 ₹{split.amount.toFixed(2)}
@@ -263,6 +327,15 @@ export default function ExpensesPage() {
             })
           )}
         </div>
+
+        {/* ── Edit Dialog (mounted once, controlled by state) ── */}
+        {expenseToEdit && (
+          <EditExpenseDialog
+            expense={expenseToEdit}
+            open={!!expenseToEdit}
+            onOpenChange={open => !open && setExpenseToEdit(null)}
+          />
+        )}
       </div>
     </TooltipProvider>
   );

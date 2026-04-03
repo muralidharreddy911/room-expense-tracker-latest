@@ -322,8 +322,26 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
               name="participants"
               render={() => (
                 <FormItem>
-                  <div className="mb-4">
+                  <div className="mb-2 flex items-center justify-between">
                     <FormLabel className="text-base">Split Among</FormLabel>
+                    {/* ── Select All / Unselect All ── */}
+                    <div
+                      className="flex items-center gap-2 cursor-pointer group"
+                      onClick={() => {
+                        const allIds = users.map(u => u.id);
+                        const currentParticipants = form.getValues('participants');
+                        const allSelected = allIds.every(id => currentParticipants.includes(id));
+                        form.setValue('participants', allSelected ? [] : allIds, { shouldValidate: true });
+                      }}
+                    >
+                      <Checkbox
+                        checked={participants.length === users.length && users.length > 0}
+                        className="pointer-events-none"
+                      />
+                      <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
+                        {participants.length === users.length ? 'Unselect All' : 'Select All'}
+                      </span>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {users.map((item) => (

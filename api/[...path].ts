@@ -3,7 +3,6 @@ import { neon } from "@neondatabase/serverless";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 // ─── Raw SQL Client ───────────────────────────────────────────────────────────
-// Using neon tagged-template SQL directly — compatible with @neondatabase/serverless v1.x
 function getSql() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
@@ -46,6 +45,9 @@ async function seedDefaults() {
       created_at TEXT NOT NULL
     )
   `;
+  // Add serial_no column if it doesn't exist yet (safe migration)
+  await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS serial_no INTEGER`;
+
   await sql`
     CREATE TABLE IF NOT EXISTS month_status (
       id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -65,13 +67,12 @@ async function seedDefaults() {
       settled_at TEXT
     )
   `;
-  // Add settled_at column to existing settlements tables that may not have it
   await sql`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS settled_at TEXT`;
 
-
-  // Seed Admin user if not exists
-  const existing = await sql`SELECT id FROM users WHERE username = 'Admin' LIMIT 1`;
-  if (existing.length === 0) {
+  // ── FIX: Only seed if there are ZERO users at all.
+  // Previously checked for 'Admin' username which caused a deleted admin to be re-created on refresh.
+  const [{ count }] = await sql`SELECT COUNT(*)::int AS count FROM users`;
+  if (count === 0) {
     await sql`
       INSERT INTO users (username, name, password, role, avatar)
       VALUES (
@@ -98,7 +99,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Diagnostic
+// ─── Health ───────────────────────────────────────────────────────────────────
 app.get("/api/health", (_req: Request, res: Response) => {
   res.json({
     status: "ok",
@@ -108,7 +109,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
   });
 });
 
-// GET /api/state
+// ─── GET /api/state ───────────────────────────────────────────────────────────
 app.get("/api/state", async (_req: Request, res: Response) => {
   try {
     const sql = getSql();
@@ -116,9 +117,26 @@ app.get("/api/state", async (_req: Request, res: Response) => {
     const [users, categories, expenses, monthStatus, settlements] = await Promise.all([
       sql`SELECT * FROM users ORDER BY name`,
       sql`SELECT *, is_default AS "isDefault" FROM categories ORDER BY name`,
-      sql`SELECT *, category_id AS "categoryId", paid_by AS "paidBy", split_type AS "splitType", created_at AS "createdAt" FROM expenses ORDER BY created_at DESC`,
-      sql`SELECT *, is_locked AS "isLocked" FROM month_status ORDER BY month`,
-      sql`SELECT *, from_user AS "fromUser", to_user AS "toUser", created_at AS "createdAt" FROM settlements ORDER BY created_at DESC`,
+      sql`
+        SELECT *,
+          category_id  AS "categoryId",
+          paid_by      AS "paidBy",
+          split_type   AS "splitType",
+          created_at   AS "createdAt",
+          serial_no    AS "serialNo"
+        FROM expenses
+        ORDER BY serial_no ASC NULLS LAST, created_at ASC
+      `,
+      sql`SELECT *, is_locked AS "isLocked" FROM month_status ORDER BY month DESC`,
+      sql`
+        SELECT *,
+          from_user  AS "fromUser",
+          to_user    AS "toUser",
+          created_at AS "createdAt",
+          settled_at AS "settledAt"
+        FROM settlements
+        ORDER BY created_at DESC
+      `,
     ]);
     res.json({ users, categories, expenses, monthStatus, settlements });
   } catch (e: any) {
@@ -127,7 +145,8 @@ app.get("/api/state", async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/users
+// ─── Users ────────────────────────────────────────────────────────────────────
+
 app.post("/api/users", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
@@ -143,7 +162,6 @@ app.post("/api/users", async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/users/:id
 app.delete("/api/users/:id", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
@@ -154,27 +172,19 @@ app.delete("/api/users/:id", async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/users/:id/password
 app.put("/api/users/:id/password", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
     const { password } = req.body;
-
-    if (!password || typeof password !== 'string' || password.trim().length < 4) {
+    if (!password || typeof password !== "string" || password.trim().length < 4) {
       return res.status(400).json({ error: "Password must be at least 4 characters long." });
     }
-
-    // Update and return the row so the frontend can confirm it was updated
     const [updated] = await sql`
       UPDATE users SET password = ${password.trim()}
       WHERE id = ${req.params.id}
       RETURNING id, username, name, role, avatar
     `;
-
-    if (!updated) {
-      return res.status(404).json({ error: "User not found." });
-    }
-
+    if (!updated) return res.status(404).json({ error: "User not found." });
     console.log(`✅ Password updated for user ${updated.username}`);
     res.json({ success: true, user: updated });
   } catch (e: any) {
@@ -183,16 +193,39 @@ app.put("/api/users/:id/password", async (req: Request, res: Response) => {
   }
 });
 
+// ─── Expenses ─────────────────────────────────────────────────────────────────
 
-// POST /api/expenses
 app.post("/api/expenses", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
     const { date, month, description, amount, categoryId, paidBy, splitType, splits, createdAt } = req.body;
+
+    // 1. Check if month is locked
+    const [monthLock] = await sql`
+      SELECT is_locked FROM month_status WHERE month = ${month} LIMIT 1
+    `;
+    if (monthLock?.is_locked) {
+      return res.status(403).json({ error: `Month ${month} is locked. Cannot add expenses.` });
+    }
+
+    // 2. Calculate next serial number (always incremental, date-independent)
+    const [{ next_serial }] = await sql`
+      SELECT COALESCE(MAX(serial_no), 0) + 1 AS next_serial FROM expenses
+    `;
+
+    // 3. Insert (let DB generate UUID for id)
     const [item] = await sql`
-      INSERT INTO expenses (date, month, description, amount, category_id, paid_by, split_type, splits, created_at)
-      VALUES (${date}, ${month}, ${description}, ${amount}, ${categoryId}, ${paidBy}, ${splitType}, ${JSON.stringify(splits)}, ${createdAt})
-      RETURNING *, category_id AS "categoryId", paid_by AS "paidBy", split_type AS "splitType", created_at AS "createdAt"
+      INSERT INTO expenses
+        (date, month, description, amount, category_id, paid_by, split_type, splits, created_at, serial_no)
+      VALUES
+        (${date}, ${month}, ${description}, ${amount}, ${categoryId}, ${paidBy},
+         ${splitType}, ${JSON.stringify(splits)}, ${createdAt}, ${next_serial})
+      RETURNING *,
+        category_id AS "categoryId",
+        paid_by     AS "paidBy",
+        split_type  AS "splitType",
+        created_at  AS "createdAt",
+        serial_no   AS "serialNo"
     `;
     res.json(item);
   } catch (e: any) {
@@ -200,17 +233,53 @@ app.post("/api/expenses", async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/expenses/:id
 app.put("/api/expenses/:id", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
-    const { date, month, description, amount, categoryId, paidBy, splitType, splits } = req.body;
+    const {
+      date, month, description, amount, categoryId, paidBy, splitType, splits,
+      requestingUserId,
+    } = req.body;
+
+    // 1. Fetch existing expense
+    const [expense] = await sql`
+      SELECT id, month, paid_by FROM expenses WHERE id = ${req.params.id}
+    `;
+    if (!expense) return res.status(404).json({ error: "Expense not found." });
+
+    // 2. Ownership check
+    if (requestingUserId && expense.paid_by !== requestingUserId) {
+      return res.status(403).json({ error: "Unauthorized: You can only edit your own expenses." });
+    }
+
+    // 3. Month lock check (uses the expense's CURRENT month)
+    const [monthLock] = await sql`
+      SELECT is_locked FROM month_status WHERE month = ${expense.month} LIMIT 1
+    `;
+    if (monthLock?.is_locked) {
+      return res.status(403).json({
+        error: `Month ${expense.month} is locked. Cannot edit expenses.`,
+      });
+    }
+
     const [item] = await sql`
       UPDATE expenses
-      SET date=${date}, month=${month}, description=${description}, amount=${amount},
-          category_id=${categoryId}, paid_by=${paidBy}, split_type=${splitType}, splits=${JSON.stringify(splits)}
+      SET
+        date        = ${date},
+        month       = ${month},
+        description = ${description},
+        amount      = ${amount},
+        category_id = ${categoryId},
+        paid_by     = ${paidBy},
+        split_type  = ${splitType},
+        splits      = ${JSON.stringify(splits)}
       WHERE id = ${req.params.id}
-      RETURNING *, category_id AS "categoryId", paid_by AS "paidBy", split_type AS "splitType", created_at AS "createdAt"
+      RETURNING *,
+        category_id AS "categoryId",
+        paid_by     AS "paidBy",
+        split_type  AS "splitType",
+        created_at  AS "createdAt",
+        serial_no   AS "serialNo"
     `;
     res.json(item);
   } catch (e: any) {
@@ -218,18 +287,15 @@ app.put("/api/expenses/:id", async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/expenses/:id
 app.delete("/api/expenses/:id", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
 
-    // 1. Fetch the expense to validate ownership and month
-    const [expense] = await sql`SELECT id, month, paid_by FROM expenses WHERE id = ${req.params.id}`;
-    if (!expense) {
-      return res.status(404).json({ error: "Expense not found." });
-    }
+    const [expense] = await sql`
+      SELECT id, month, paid_by FROM expenses WHERE id = ${req.params.id}
+    `;
+    if (!expense) return res.status(404).json({ error: "Expense not found." });
 
-    // 2. Validate ownership — only the payer can delete their expense
     const requestingUserId = req.query.userId as string;
     if (!requestingUserId) {
       return res.status(400).json({ error: "userId query parameter is required." });
@@ -238,15 +304,15 @@ app.delete("/api/expenses/:id", async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Unauthorized: You can only delete your own expenses." });
     }
 
-    // 3. Check if that month is locked
     const [monthLock] = await sql`
       SELECT is_locked FROM month_status WHERE month = ${expense.month} LIMIT 1
     `;
     if (monthLock?.is_locked) {
-      return res.status(403).json({ error: `Month ${expense.month} is locked. Deletion is not allowed.` });
+      return res.status(403).json({
+        error: `Month ${expense.month} is locked. Deletion is not allowed.`,
+      });
     }
 
-    // 4. Proceed with deletion
     await sql`DELETE FROM expenses WHERE id = ${req.params.id}`;
     console.log(`✅ Expense ${req.params.id} deleted by user ${requestingUserId}`);
     res.json({ success: true });
@@ -256,15 +322,16 @@ app.delete("/api/expenses/:id", async (req: Request, res: Response) => {
   }
 });
 
+// ─── Categories ───────────────────────────────────────────────────────────────
 
-
-// POST /api/categories
 app.post("/api/categories", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
     const { name, isDefault } = req.body;
-    // Duplicate check (case-insensitive)
-    const existing = await sql`SELECT id FROM categories WHERE LOWER(name) = LOWER(${name}) LIMIT 1`;
+    // Case-insensitive duplicate check
+    const existing = await sql`
+      SELECT id FROM categories WHERE LOWER(name) = LOWER(${name}) LIMIT 1
+    `;
     if (existing.length > 0) {
       return res.status(409).json({ error: "Category already exists." });
     }
@@ -278,14 +345,16 @@ app.post("/api/categories", async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/categories/:id
 app.delete("/api/categories/:id", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
-    // Safety: check if used in any expense
-    const usedIn = await sql`SELECT id FROM expenses WHERE category_id = ${req.params.id} LIMIT 1`;
+    const usedIn = await sql`
+      SELECT id FROM expenses WHERE category_id = ${req.params.id} LIMIT 1
+    `;
     if (usedIn.length > 0) {
-      return res.status(409).json({ error: "Category is used in existing expenses and cannot be deleted." });
+      return res.status(409).json({
+        error: "Category is used in existing expenses and cannot be deleted.",
+      });
     }
     await sql`DELETE FROM categories WHERE id = ${req.params.id}`;
     res.json({ success: true });
@@ -294,7 +363,8 @@ app.delete("/api/categories/:id", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/months
+// ─── Months ───────────────────────────────────────────────────────────────────
+
 app.post("/api/months", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
@@ -310,15 +380,36 @@ app.post("/api/months", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/settlements
+// DELETE /api/months/:month — unlock (admin can re-open a locked month)
+app.delete("/api/months/:month", async (req: Request, res: Response) => {
+  try {
+    const sql = getSql();
+    const { month } = req.params;
+    const [item] = await sql`
+      UPDATE month_status SET is_locked = FALSE WHERE month = ${month}
+      RETURNING *, is_locked AS "isLocked"
+    `;
+    if (!item) return res.status(404).json({ error: "Month not found." });
+    res.json(item);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Settlements ──────────────────────────────────────────────────────────────
+
 app.post("/api/settlements", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
     const { fromUser, toUser, amount, status, month, createdAt } = req.body;
     const [item] = await sql`
       INSERT INTO settlements (from_user, to_user, amount, status, month, created_at)
-      VALUES (${fromUser}, ${toUser}, ${amount}, ${status || "pending"}, ${month}, ${createdAt})
-      RETURNING *, from_user AS "fromUser", to_user AS "toUser", created_at AS "createdAt"
+      VALUES (${fromUser}, ${toUser}, ${amount}, ${status || "paid"}, ${month}, ${createdAt})
+      RETURNING *,
+        from_user  AS "fromUser",
+        to_user    AS "toUser",
+        created_at AS "createdAt",
+        settled_at AS "settledAt"
     `;
     res.json(item);
   } catch (e: any) {
@@ -326,18 +417,21 @@ app.post("/api/settlements", async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/settlements/:id
 app.put("/api/settlements/:id", async (req: Request, res: Response) => {
   try {
     const sql = getSql();
     const newStatus = req.body.status;
-    const settledAt = newStatus === 'paid' ? new Date().toISOString() : null;
+    const settledAt = newStatus === "paid" ? new Date().toISOString() : null;
     const [item] = await sql`
-      UPDATE settlements 
-      SET status = ${newStatus},
+      UPDATE settlements
+      SET status     = ${newStatus},
           settled_at = ${settledAt}
       WHERE id = ${req.params.id}
-      RETURNING *, from_user AS "fromUser", to_user AS "toUser", created_at AS "createdAt", settled_at AS "settledAt"
+      RETURNING *,
+        from_user  AS "fromUser",
+        to_user    AS "toUser",
+        created_at AS "createdAt",
+        settled_at AS "settledAt"
     `;
     res.json(item);
   } catch (e: any) {

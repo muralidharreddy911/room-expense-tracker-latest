@@ -21,6 +21,7 @@ export interface IStorage {
 
   // Categories
   createCategory(category: any): Promise<any>;
+  deleteCategory(id: string): Promise<void>;
 
   // Month Status
   upsertMonthStatus(month: string, isLocked: boolean): Promise<any>;
@@ -93,6 +94,10 @@ export class DatabaseStorage implements IStorage {
   async createCategory(category: any): Promise<any> {
     const [created] = await db.insert(categories).values(category).returning();
     return created;
+  }
+
+  async deleteCategory(id: string): Promise<void> {
+    await db.delete(categories).where(eq(categories.id, id));
   }
 
   async upsertMonthStatus(month: string, isLocked: boolean): Promise<any> {

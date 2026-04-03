@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { INITIAL_USERS, INITIAL_CATEGORIES } from "../client/src/lib/mock-data";
+import { INITIAL_CATEGORIES } from "../client/src/lib/mock-data";
 
 export function registerRoutes(
   httpServer: Server,
@@ -11,20 +11,17 @@ export function registerRoutes(
   // Seed Defaults Asynchronously
   (async () => {
     try {
-      const defaultUsername = "Admin";
-      const existingAdmin = await storage.getUserByUsername(defaultUsername);
-      if (!existingAdmin) {
-        // Seed first user
+      // Only seed if database has ZERO users (prevents re-seeding after admin deletion)
+      const allUsers = await storage.getUsers();
+      if (allUsers.length === 0) {
         await storage.createUser({
           username: "Admin",
-          name: "Admin", // Assuming UI name field is populated
+          name: "Admin",
           role: "admin",
           password: "Admin123",
           avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Admin"
         });
         console.log("Default Admin user successfully created.");
-        
-        // Also strictly seed the initial categories since otherwise they won't exist in new DB
         const { categories } = await storage.getAppState();
         if (categories.length === 0) {
           for (const cat of INITIAL_CATEGORIES) {
@@ -100,11 +97,26 @@ export function registerRoutes(
     } catch (e) { res.status(500).json({ error: "Failed" }); }
   });
 
+  app.delete("/api/categories/:id", async (req, res) => {
+    try {
+      await storage.deleteCategory(req.params.id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(409).json({ error: e.message || "Failed" }); }
+  });
+
   // Month
   app.post("/api/months", async (req, res) => {
     try {
       const { month, isLocked } = req.body;
       const m = await storage.upsertMonthStatus(month, isLocked);
+      res.json(m);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  // Unlock month
+  app.delete("/api/months/:month", async (req, res) => {
+    try {
+      const m = await storage.upsertMonthStatus(req.params.month, false);
       res.json(m);
     } catch (e) { res.status(500).json({ error: "Failed" }); }
   });

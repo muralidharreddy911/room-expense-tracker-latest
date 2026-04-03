@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, jsonb, real, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, jsonb, real, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -44,6 +44,7 @@ export const expenses = pgTable("expenses", {
   paidBy: text("paid_by").notNull(),
   splitType: text("split_type").notNull(),
   splits: jsonb("splits").notNull(), // User splits {userId, amount} array
+  serialNo: integer("serial_no"),    // Auto-incremental display ID (date-independent)
   createdAt: text("created_at").notNull(),
 });
 
