@@ -34,6 +34,19 @@ export default function ExpensesPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expenseToEdit, setExpenseToEdit] = useState<Expense | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshState();
+      // After refresh, reset to the latest available month
+      // (accounts for newly added months by admin)
+      setSelectedMonth(''); // clears so the useEffect below re-sets the best default
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Set default to most recent available month once loaded
   useEffect(() => {
@@ -74,8 +87,9 @@ export default function ExpensesPage() {
             <h1 className="text-3xl font-bold tracking-tight">Expenses</h1>
             <p className="text-muted-foreground">Manage and track shared bills.</p>
           </div>
-          <Button variant="outline" size="sm" onClick={refreshState}>
-            <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </Button>
         </div>
         <div className="border rounded-xl p-12 flex flex-col items-center gap-4 text-center bg-muted/30 border-dashed text-muted-foreground">
@@ -119,8 +133,8 @@ export default function ExpensesPage() {
               </SelectContent>
             </Select>
 
-            <Button variant="outline" size="icon" onClick={refreshState} title="Refresh">
-              <RefreshCw className="w-4 h-4" />
+            <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isRefreshing} title="Refresh data">
+              <RefreshCw className={`w-4 h-4 transition-transform ${isRefreshing ? 'animate-spin' : ''}`} />
             </Button>
 
             {!isLocked && selectedMonth && <AddExpenseDialog />}

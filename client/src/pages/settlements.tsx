@@ -28,6 +28,17 @@ export default function SettlementsPage() {
 
   // ── Month Selector ──────────────────────────────────────────────────────────
   const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshState();
+      setSelectedMonth(''); // reset so useEffect picks the latest active month
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (availableMonths.length > 0 && !selectedMonth) {
@@ -152,8 +163,8 @@ export default function SettlementsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={refreshState} title="Refresh">
-            <RefreshCw className="w-4 h-4" />
+          <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isRefreshing} title="Refresh">
+            <RefreshCw className={`w-4 h-4 transition-transform ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </div>

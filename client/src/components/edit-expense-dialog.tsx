@@ -106,7 +106,9 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
   const participants = form.watch("participants");
   const customSplits = form.watch("customSplits");
 
-  const participantSplitTotal = participants.reduce((acc, userId) => {
+  const safeParticipants = participants ?? [];
+
+  const participantSplitTotal = safeParticipants.reduce((acc, userId) => {
     const val = Number(customSplits?.[userId]);
     return acc + (isNaN(val) ? 0 : val);
   }, 0);
@@ -331,17 +333,18 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
                       className="flex items-center gap-2 cursor-pointer group"
                       onClick={() => {
                         const allIds = users.map(u => u.id);
-                        const currentParticipants = form.getValues("participants");
-                        const allSelected = allIds.every(id => currentParticipants.includes(id));
-                        form.setValue("participants", allSelected ? [] : allIds, { shouldValidate: true });
+                        const currentParticipants = form.getValues("participants") ?? [];
+                        const allSelected = allIds.length > 0 && allIds.every(id => currentParticipants.includes(id));
+                        // No shouldValidate — avoids RHF briefly setting participants to undefined
+                        form.setValue("participants", allSelected ? [] : allIds);
                       }}
                     >
                       <Checkbox
-                        checked={participants.length === users.length && users.length > 0}
+                        checked={safeParticipants.length === users.length && users.length > 0}
                         className="pointer-events-none"
                       />
                       <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
-                        {participants.length === users.length ? "Unselect All" : "Select All"}
+                        {safeParticipants.length === users.length && users.length > 0 ? "Unselect All" : "Select All"}
                       </span>
                     </div>
                   </div>
@@ -358,7 +361,7 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
                           >
                             <FormControl>
                               <Checkbox
-                                checked={field.value?.includes(item.id)}
+                                checked={field.value?.includes(item.id) ?? false}
                                 onCheckedChange={checked =>
                                   checked
                                     ? field.onChange([...field.value, item.id])
@@ -418,7 +421,7 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
             {splitType === "custom" && (
               <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm font-medium mb-2">Enter Amounts</p>
-                {users.filter(u => participants.includes(u.id)).map(u => (
+                {users.filter(u => safeParticipants.includes(u.id)).map(u => (
                   <FormField
                     key={u.id}
                     control={form.control}

@@ -45,8 +45,25 @@ async function seedDefaults() {
       created_at TEXT NOT NULL
     )
   `;
-  // Add serial_no column if it doesn't exist yet (safe migration)
+
+  // ── Migration: serial_no column ─────────────────────────────────────────────
   await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS serial_no INTEGER`;
+
+  // ── Fix 3: Backfill serial_no for any existing expenses that have NULL ──────
+  // Uses created_at order so oldest expense gets #1; new inserts continue from MAX+1
+  await sql`
+    WITH ranked AS (
+      SELECT id,
+        COALESCE((SELECT MAX(serial_no) FROM expenses WHERE serial_no IS NOT NULL), 0)
+        + ROW_NUMBER() OVER (ORDER BY created_at ASC NULLS LAST) AS new_sn
+      FROM expenses
+      WHERE serial_no IS NULL
+    )
+    UPDATE expenses
+    SET serial_no = ranked.new_sn
+    FROM ranked
+    WHERE expenses.id = ranked.id
+  `;
 
   await sql`
     CREATE TABLE IF NOT EXISTS month_status (
@@ -69,10 +86,27 @@ async function seedDefaults() {
   `;
   await sql`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS settled_at TEXT`;
 
-  // ── FIX: Only seed if there are ZERO users at all.
-  // Previously checked for 'Admin' username which caused a deleted admin to be re-created on refresh.
-  const [{ count }] = await sql`SELECT COUNT(*)::int AS count FROM users`;
-  if (count === 0) {
+  // ── Fix 1: Add case-insensitive unique index on category name ───────────────
+  // This prevents duplicate categories regardless of casing (Food vs food)
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS categories_name_lower_uq
+    ON categories (LOWER(name))
+  `;
+
+  // ── Fix 1: Remove existing duplicate categories (keep oldest row per name) ──
+  await sql`
+    DELETE FROM categories
+    WHERE id NOT IN (
+      SELECT MIN(id)
+      FROM categories
+      GROUP BY LOWER(name)
+    )
+  `;
+
+  // ── Fix 1 + Admin: Use EXISTS instead of COUNT cast (avoids BigInt type issues)
+  // Only seed if there are ZERO users (prevents re-seeding after admin deletion)
+  const existing = await sql`SELECT 1 FROM users LIMIT 1`;
+  if (existing.length === 0) {
     await sql`
       INSERT INTO users (username, name, password, role, avatar)
       VALUES (
@@ -84,13 +118,17 @@ async function seedDefaults() {
       )
     `;
     console.log("✅ Default Admin user created.");
+  }
 
-    // Seed categories
-    const cats = ["Food", "Groceries", "Power", "Water", "Rent", "Internet", "Others"];
-    for (const name of cats) {
-      await sql`INSERT INTO categories (name, is_default) VALUES (${name}, TRUE)`;
-    }
-    console.log("✅ Default categories seeded.");
+  // ── Seed default categories only if none exist (idempotent) ─────────────────
+  // ON CONFLICT (LOWER(name)) DO NOTHING prevents duplicates even if called multiple times
+  const cats = ["Food", "Groceries", "Power", "Water", "Rent", "Internet", "Others"];
+  for (const name of cats) {
+    await sql`
+      INSERT INTO categories (name, is_default)
+      VALUES (${name}, TRUE)
+      ON CONFLICT (LOWER(name)) DO NOTHING
+    `;
   }
 }
 
@@ -209,9 +247,11 @@ app.post("/api/expenses", async (req: Request, res: Response) => {
     }
 
     // 2. Calculate next serial number (always incremental, date-independent)
-    const [{ next_serial }] = await sql`
+    // Number() cast handles cases where Neon returns BigInt for arithmetic results
+    const [serialRow] = await sql`
       SELECT COALESCE(MAX(serial_no), 0) + 1 AS next_serial FROM expenses
     `;
+    const next_serial = Number(serialRow.next_serial);
 
     // 3. Insert (let DB generate UUID for id)
     const [item] = await sql`

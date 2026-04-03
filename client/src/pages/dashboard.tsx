@@ -28,6 +28,17 @@ export default function Dashboard() {
 
   // ── Month Selector (only admin-created months) ───────────────────────────────
   const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshState();
+      setSelectedMonth(''); // reset so useEffect picks the latest active month
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Default to the most recent unlocked month (or first available)
   useEffect(() => {
@@ -123,8 +134,8 @@ export default function Dashboard() {
             </Select>
           )}
 
-          <Button variant="outline" size="icon" onClick={refreshState} title="Refresh data">
-            <RefreshCw className="w-4 h-4" />
+          <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isRefreshing} title="Refresh data">
+            <RefreshCw className={`w-4 h-4 transition-transform ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
 
           {/* Only show Add Expense when there's an active unlocked month */}

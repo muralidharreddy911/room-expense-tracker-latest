@@ -96,8 +96,11 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
   const participants = form.watch("participants");
   const customSplits = form.watch("customSplits");
 
+  // Guard against undefined during RHF re-validation (causes blank page if participants is undefined)
+  const safeParticipants = participants ?? [];
+
   // Calculate remaining correctly — only sum amounts for selected participants
-  const participantSplitTotal = participants.reduce((acc, userId) => {
+  const participantSplitTotal = safeParticipants.reduce((acc, userId) => {
     const val = Number(customSplits?.[userId]);
     return acc + (isNaN(val) ? 0 : val);
   }, 0);
@@ -329,17 +332,19 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                       className="flex items-center gap-2 cursor-pointer group"
                       onClick={() => {
                         const allIds = users.map(u => u.id);
-                        const currentParticipants = form.getValues('participants');
-                        const allSelected = allIds.every(id => currentParticipants.includes(id));
-                        form.setValue('participants', allSelected ? [] : allIds, { shouldValidate: true });
+                        const currentParticipants = form.getValues('participants') ?? [];
+                        const allSelected = allIds.length > 0 && allIds.every(id => currentParticipants.includes(id));
+                        // Do NOT pass shouldValidate:true — it briefly makes participants undefined
+                        // which crashes the reduce() on line above
+                        form.setValue('participants', allSelected ? [] : allIds);
                       }}
                     >
                       <Checkbox
-                        checked={participants.length === users.length && users.length > 0}
+                        checked={safeParticipants.length === users.length && users.length > 0}
                         className="pointer-events-none"
                       />
                       <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
-                        {participants.length === users.length ? 'Unselect All' : 'Select All'}
+                        {safeParticipants.length === users.length && users.length > 0 ? 'Unselect All' : 'Select All'}
                       </span>
                     </div>
                   </div>
@@ -357,7 +362,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                             >
                               <FormControl>
                                 <Checkbox
-                                  checked={field.value?.includes(item.id)}
+                                  checked={field.value?.includes(item.id) ?? false}
                                   onCheckedChange={(checked) => {
                                     return checked
                                       ? field.onChange([...field.value, item.id])
