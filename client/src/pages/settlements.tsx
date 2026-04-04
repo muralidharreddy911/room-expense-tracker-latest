@@ -54,43 +54,75 @@ export default function SettlementsPage() {
   // Only use expenses from the selected month
   const monthExpenses = expenses.filter(e => e.month === selectedMonth);
 
-  const debts: Record<string, Record<string, number>> = {};
+  // 1. Calculate net balances for each user (exactly like Dashboard)
+  const userNetBalances: Record<string, number> = {};
+  users.forEach(u => { userNetBalances[u.id] = 0; });
 
   monthExpenses.forEach(expense => {
+    // Payer's balance increases (they paid, they are owed this back)
+    if (userNetBalances[expense.paidBy] !== undefined) {
+      userNetBalances[expense.paidBy] += expense.amount;
+    }
+    // Participants' balance decreases by their share (they consumed this)
     expense.splits.forEach(split => {
-      if (split.userId !== expense.paidBy) {
-        if (!debts[split.userId]) debts[split.userId] = {};
-        debts[split.userId][expense.paidBy] =
-          (debts[split.userId][expense.paidBy] || 0) + split.amount;
+      if (userNetBalances[split.userId] !== undefined) {
+        userNetBalances[split.userId] -= split.amount;
       }
     });
   });
 
-  // Subtract settlements that belong to this month (paid only)
+  // Subtract already paid settlements from these net balances
+  // Debtor (fromUser) pays Creditor (toUser).
+  // Debtor's negative balance moves closer to 0 (increases).
+  // Creditor's positive balance moves closer to 0 (decreases).
   settlements
     .filter(s => s.status === 'paid' && s.month === selectedMonth)
     .forEach(s => {
-      if (debts[s.fromUser]?.[s.toUser]) {
-        debts[s.fromUser][s.toUser] = Math.max(0, debts[s.fromUser][s.toUser] - s.amount);
-      }
+      if (userNetBalances[s.fromUser] !== undefined) userNetBalances[s.fromUser] += s.amount;
+      if (userNetBalances[s.toUser] !== undefined) userNetBalances[s.toUser] -= s.amount;
     });
 
-  // ── Balances from current user's perspective ────────────────────────────────
-  /** 
-   * myDebts: people I owe money to (I am debtor)
-   * owedToMe: people who owe me money (I am creditor = receiver)
-   */
+  // 2. Separate into debtors and creditors
+  // balances < 0 mean they owe money (debtors)
+  // balances > 0 mean they should receive money (creditors)
+  const debtors = users.map(u => ({ id: u.id, balance: userNetBalances[u.id] })).filter(u => u.balance < -0.01);
+  const creditors = users.map(u => ({ id: u.id, balance: userNetBalances[u.id] })).filter(u => u.balance > 0.01);
+
+  // Sort them to be deterministic (largest debtor pays largest creditor first)
+  debtors.sort((a, b) => a.balance - b.balance); // smallest negative first (largest absolute magnitude)
+  creditors.sort((a, b) => b.balance - a.balance); // largest positive first
+
+  // 3. Compute pairwise settlements greedily matches
   const myDebts: { to: string; amount: number }[] = [];
   const owedToMe: { from: string; amount: number }[] = [];
 
-  users.forEach(u => {
-    if (u.id === currentUser?.id) return;
-    const iOweThem = debts[currentUser!.id]?.[u.id] || 0;
-    const theyOweMe = debts[u.id]?.[currentUser!.id] || 0;
-    const net = theyOweMe - iOweThem;
-    if (net > 0.01) owedToMe.push({ from: u.id, amount: net });
-    else if (net < -0.01) myDebts.push({ to: u.id, amount: Math.abs(net) });
-  });
+  let i = 0; // index for debtors
+  let j = 0; // index for creditors
+  
+  while (i < debtors.length && j < creditors.length) {
+    const debtor = debtors[i];
+    const creditor = creditors[j];
+    
+    // amount to settle is the min of what debtor owes and creditor is owed
+    const debtorOweRef = Math.abs(debtor.balance);
+    const creditorOwedRef = creditor.balance;
+    const settleAmount = Math.min(debtorOweRef, creditorOwedRef);
+    
+    if (settleAmount > 0.01) {
+      if (debtor.id === currentUser?.id) {
+        myDebts.push({ to: creditor.id, amount: settleAmount });
+      } else if (creditor.id === currentUser?.id) {
+        owedToMe.push({ from: debtor.id, amount: settleAmount });
+      }
+    }
+    
+    // adjust balances for next iteration
+    debtor.balance += settleAmount;
+    creditor.balance -= settleAmount;
+    
+    if (Math.abs(debtor.balance) < 0.01) i++;
+    if (Math.abs(creditor.balance) < 0.01) j++;
+  }
 
   // ── Net Balance (single source of truth — always equals Dashboard's myPaid - myShare) ──
   // sum(owedToMe) - sum(myDebts) == dashboard netBalance mathematically
