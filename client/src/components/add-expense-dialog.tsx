@@ -18,7 +18,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -61,6 +60,12 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
   const { users, categories, currentUser, addExpense, isMonthLocked } = useApp();
   const [open, setOpen] = useState(false);
 
+  // ── Participant selection managed as plain React state ─────────────────────
+  // Reason: form.watch("participants") can become undefined during RHF
+  // internal re-renders, causing .includes()/.reduce() to throw and blank page.
+  // React.useState is always a defined array — no race conditions possible.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
@@ -70,14 +75,16 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
       categoryId: categories[0]?.id || "",
       paidBy: currentUser?.id || "",
       splitType: "equal",
-      participants: users.map(u => u.id), // Default everyone
+      participants: [],
       customSplits: {},
     },
   });
 
-  // Reset form when opening
+  // Reset everything when dialog opens
   useEffect(() => {
     if (open && currentUser) {
+      const initial = users.map(u => u.id);
+      setSelectedIds(initial);
       form.reset({
         description: "",
         amount: 0,
@@ -85,22 +92,23 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
         categoryId: categories[0]?.id || "",
         paidBy: currentUser.id,
         splitType: "equal",
-        participants: users.map(u => u.id),
+        participants: initial,
         customSplits: {},
       });
     }
-  }, [open, currentUser, users, categories, form]);
+  }, [open]); // Only react to dialog open/close
+
+  // Sync selectedIds → RHF form field so Zod validates on submit
+  useEffect(() => {
+    form.setValue("participants", selectedIds);
+  }, [selectedIds]);
 
   const splitType = form.watch("splitType");
   const amount = form.watch("amount");
-  const participants = form.watch("participants");
   const customSplits = form.watch("customSplits");
 
-  // Guard against undefined during RHF re-validation (causes blank page if participants is undefined)
-  const safeParticipants = participants ?? [];
-
-  // Calculate remaining correctly — only sum amounts for selected participants
-  const participantSplitTotal = safeParticipants.reduce((acc, userId) => {
+  // Use selectedIds (not form.watch) for remaining calculation — always safe array
+  const participantSplitTotal = selectedIds.reduce((acc, userId) => {
     const val = Number(customSplits?.[userId]);
     return acc + (isNaN(val) ? 0 : val);
   }, 0);
@@ -109,33 +117,32 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const onSubmit = async (data: ExpenseFormValues) => {
-    const month = format(data.date, 'yyyy-MM');
+    const month = format(data.date, "yyyy-MM");
     if (isMonthLocked(month)) {
       form.setError("date", { message: "This month is locked and cannot be edited." });
       return;
     }
 
-    // Validate custom splits don't exceed total
-    if (data.splitType === 'custom') {
+    if (data.splitType === "custom") {
       const total = data.participants.reduce((acc, userId) => {
         const val = Number(data.customSplits?.[userId]);
         return acc + (isNaN(val) ? 0 : val);
       }, 0);
       if (total > data.amount + 0.01) {
-        form.setError("customSplits" as any, { message: `Split total (₹${total.toFixed(2)}) exceeds expense amount (₹${data.amount.toFixed(2)})` });
+        form.setError("customSplits" as any, {
+          message: `Split total (₹${total.toFixed(2)}) exceeds expense amount (₹${data.amount.toFixed(2)})`,
+        });
         return;
       }
     }
 
     let splits: Split[] = [];
-
-    if (data.splitType === 'equal') {
+    if (data.splitType === "equal") {
       const splitAmount = data.amount / data.participants.length;
       splits = data.participants.map(userId => ({
         userId,
-        amount: Number(splitAmount.toFixed(2))
+        amount: Number(splitAmount.toFixed(2)),
       }));
-      // Fix rounding errors
       const currentSum = splits.reduce((sum, s) => sum + s.amount, 0);
       const diff = Number((data.amount - currentSum).toFixed(2));
       if (diff !== 0 && splits.length > 0) {
@@ -144,13 +151,13 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
     } else {
       splits = data.participants.map(userId => ({
         userId,
-        amount: Number(Number(data.customSplits?.[userId] || 0).toFixed(2))
+        amount: Number(Number(data.customSplits?.[userId] || 0).toFixed(2)),
       }));
     }
 
     const newExpense: Expense = {
       id: `e${Date.now()}`,
-      date: format(data.date, 'yyyy-MM-dd'),
+      date: format(data.date, "yyyy-MM-dd"),
       month,
       description: data.description,
       amount: data.amount,
@@ -172,6 +179,22 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
     }
   };
 
+  // ── Participant toggle helpers ──────────────────────────────────────────────
+  const allSelected = users.length > 0 && users.every(u => selectedIds.includes(u.id));
+
+  const handleSelectAll = () => {
+    if (users.length === 0) return;
+    setSelectedIds(allSelected ? [] : users.map(u => u.id));
+  };
+
+  const handleToggle = (userId: string) => {
+    setSelectedIds(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -186,7 +209,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            
+
             <FormField
               control={form.control}
               name="description"
@@ -211,20 +234,13 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                     <FormControl>
                       <div className="relative">
                         <span className="absolute left-3 top-2.5 text-muted-foreground">₹</span>
-                        <Input 
-                          type="number" 
-                          step="0.01" 
-                          className="pl-7 font-mono" 
-                          placeholder="0.00" 
-                          {...field} 
-                        />
+                        <Input type="number" step="0.01" className="pl-7 font-mono" placeholder="0.00" {...field} />
                       </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="categoryId"
@@ -233,15 +249,11 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                     <FormLabel>Category</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select" />
-                        </SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {categories.map((cat) => (
-                          <SelectItem key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </SelectItem>
+                        {categories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -252,7 +264,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
             </div>
 
             <div className="flex gap-4">
-               <FormField
+              <FormField
                 control={form.control}
                 name="date"
                 render={({ field }) => (
@@ -261,39 +273,22 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
-                          <Button
-                            variant={"outline"}
-                            className={cn(
-                              "w-full pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, "PPP")
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
+                          <Button variant="outline" className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
+                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
                             <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date) =>
-                            date > new Date() || date < new Date("1900-01-01")
-                          }
-                          initialFocus
-                        />
+                        <Calendar mode="single" selected={field.value} onSelect={field.onChange}
+                          disabled={date => date > new Date() || date < new Date("1900-01-01")}
+                          initialFocus />
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="paidBy"
@@ -302,15 +297,11 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                     <FormLabel>Paid By</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select" />
-                        </SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {users.map((u) => (
-                          <SelectItem key={u.id} value={u.id}>
-                            {u.name}
-                          </SelectItem>
+                        {users.map(u => (
+                          <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -320,73 +311,45 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="participants"
-              render={({ field }) => {
-                // Single source of truth — no nested FormField with same name
-                // which caused field.value to become undefined during re-registration
-                const val: string[] = field.value ?? [];
-                const allIds = users.map(u => u.id);
-                const allSelected = allIds.length > 0 && allIds.every(id => val.includes(id));
+            {/* ── Participants — plain React state, no RHF field.value ── */}
+            <div className="space-y-2">
+              <div className="mb-2 flex items-center justify-between">
+                <label className="text-sm font-medium leading-none">Split Among</label>
+                {/* Select All / Unselect All */}
+                <div
+                  className="flex items-center gap-2 cursor-pointer group"
+                  onClick={handleSelectAll}
+                >
+                  <Checkbox checked={allSelected} className="pointer-events-none" />
+                  <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
+                    {allSelected ? "Unselect All" : "Select All"}
+                  </span>
+                </div>
+              </div>
 
-                return (
-                  <FormItem>
-                    <div className="mb-2 flex items-center justify-between">
-                      <FormLabel className="text-base">Split Among</FormLabel>
-
-                      {/* ── Select All / Unselect All ── */}
-                      <div
-                        className="flex items-center gap-2 cursor-pointer group"
-                        onClick={() => {
-                          if (users.length === 0) return;
-                          // Use field.onChange directly — no form.setValue, no shouldValidate
-                          field.onChange(allSelected ? [] : allIds);
-                        }}
-                      >
-                        <Checkbox
-                          checked={allSelected}
-                          className="pointer-events-none"
-                        />
-                        <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
-                          {allSelected ? 'Unselect All' : 'Select All'}
-                        </span>
-                      </div>
+              <div className="grid grid-cols-2 gap-2">
+                {users.map(user => {
+                  const isChecked = selectedIds.includes(user.id);
+                  return (
+                    <div
+                      key={user.id}
+                      className="flex flex-row items-center gap-3 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors cursor-pointer"
+                      onClick={() => handleToggle(user.id)}
+                    >
+                      <Checkbox checked={isChecked} className="pointer-events-none" />
+                      <span className="text-sm font-normal select-none">{user.name}</span>
                     </div>
+                  );
+                })}
+              </div>
 
-                    {/* ── Individual member checkboxes (no nested FormField) ── */}
-                    <div className="grid grid-cols-2 gap-2">
-                      {users.map(item => {
-                        const isChecked = val.includes(item.id);
-                        return (
-                          <div
-                            key={item.id}
-                            className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors cursor-pointer"
-                            onClick={() => {
-                              field.onChange(
-                                isChecked
-                                  ? val.filter(v => v !== item.id)
-                                  : [...val, item.id]
-                              );
-                            }}
-                          >
-                            <Checkbox
-                              checked={isChecked}
-                              className="pointer-events-none mt-0.5"
-                            />
-                            <FormLabel className="font-normal cursor-pointer flex-1 mb-0">
-                              {item.name}
-                            </FormLabel>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                );
-              }}
-            />
-
+              {/* Show validation error from RHF schema */}
+              {form.formState.errors.participants && (
+                <p className="text-[0.8rem] font-medium text-destructive">
+                  {form.formState.errors.participants.message as string}
+                </p>
+              )}
+            </div>
 
             <FormField
               control={form.control}
@@ -396,22 +359,8 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                   <FormLabel>Split Type</FormLabel>
                   <FormControl>
                     <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={field.value === "equal" ? "default" : "outline"}
-                        className="flex-1"
-                        onClick={() => field.onChange("equal")}
-                      >
-                        Equal
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={field.value === "custom" ? "default" : "outline"}
-                        className="flex-1"
-                        onClick={() => field.onChange("custom")}
-                      >
-                        Custom
-                      </Button>
+                      <Button type="button" variant={field.value === "equal" ? "default" : "outline"} className="flex-1" onClick={() => field.onChange("equal")}>Equal</Button>
+                      <Button type="button" variant={field.value === "custom" ? "default" : "outline"} className="flex-1" onClick={() => field.onChange("custom")}>Custom</Button>
                     </div>
                   </FormControl>
                   <FormMessage />
@@ -419,51 +368,37 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
               )}
             />
 
-            {splitType === 'custom' && (
-               <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
-                 <p className="text-sm font-medium mb-2">Enter Amounts</p>
-                 {users.filter(u => participants.includes(u.id)).map(u => (
-                   <FormField
+            {splitType === "custom" && (
+              <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
+                <p className="text-sm font-medium mb-2">Enter Amounts</p>
+                {users.filter(u => selectedIds.includes(u.id)).map(u => (
+                  <FormField
                     key={u.id}
                     control={form.control}
                     name={`customSplits.${u.id}`}
                     render={({ field }) => (
                       <FormItem className="flex items-center gap-2 space-y-0">
                         <FormLabel className="w-24 truncate">{u.name}</FormLabel>
-                         <FormControl>
-                          <Input 
-                            type="number" 
-                            step="0.01" 
-                            {...field} 
-                            placeholder="0.00"
-                            className="bg-background"
-                          />
+                        <FormControl>
+                          <Input type="number" step="0.01" {...field} placeholder="0.00" className="bg-background" />
                         </FormControl>
                       </FormItem>
                     )}
-                   />
-                 ))}
-                 <div className="pt-2 text-right text-sm">
-                   Remaining: <span className={cn("font-bold", 
-                    remaining < -0.01
-                      ? "text-destructive" 
-                      : remaining > 0.01
-                      ? "text-amber-500"
+                  />
+                ))}
+                <div className="pt-2 text-right text-sm">
+                  Remaining: <span className={cn("font-bold",
+                    remaining < -0.01 ? "text-destructive"
+                      : remaining > 0.01 ? "text-amber-500"
                       : "text-green-600"
-                   )}>
-                     ₹{remaining.toFixed(2)}
-                   </span>
-                   {remaining > 0.01 && (
-                     <span className="ml-2 text-xs text-amber-500">(unallocated)</span>
-                   )}
-                   {remaining < -0.01 && (
-                     <span className="ml-2 text-xs text-destructive">(exceeds total!)</span>
-                   )}
-                 </div>
-                 <p className="text-[0.8rem] font-medium text-destructive">
-                    {(form.formState.errors.customSplits as any)?.message}
-                 </p>
-               </div>
+                  )}>₹{remaining.toFixed(2)}</span>
+                  {remaining > 0.01 && <span className="ml-2 text-xs text-amber-500">(unallocated)</span>}
+                  {remaining < -0.01 && <span className="ml-2 text-xs text-destructive">(exceeds total!)</span>}
+                </div>
+                <p className="text-[0.8rem] font-medium text-destructive">
+                  {(form.formState.errors.customSplits as any)?.message}
+                </p>
+              </div>
             )}
 
             <DialogFooter>

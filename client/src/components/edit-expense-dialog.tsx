@@ -64,10 +64,16 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
   const { users, categories, currentUser, updateExpense, isMonthLocked } = useApp();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // The month this expense belongs to — date must stay within it
-  const expenseMonth = expense.month; // YYYY-MM
+  const expenseMonth = expense.month;
   const monthStart = startOfMonth(parseISO(`${expenseMonth}-01`));
   const monthEnd = endOfMonth(parseISO(`${expenseMonth}-01`));
+
+  // ── Participant selection as plain React state ─────────────────────────────
+  // Avoids form.watch("participants") returning undefined during RHF transitions
+  // which caused .includes()/.reduce() to throw → blank/black screen crash
+  const [selectedIds, setSelectedIds] = useState<string[]>(
+    () => expense.splits.map(s => s.userId)
+  );
 
   const form = useForm<EditExpenseFormValues>({
     resolver: zodResolver(editExpenseSchema),
@@ -78,37 +84,38 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
       categoryId: expense.categoryId,
       splitType: expense.splitType,
       participants: expense.splits.map(s => s.userId),
-      customSplits: Object.fromEntries(
-        expense.splits.map(s => [s.userId, s.amount])
-      ),
+      customSplits: Object.fromEntries(expense.splits.map(s => [s.userId, s.amount])),
     },
   });
 
-  // Sync form when expense changes (e.g., different expense opened)
+  // Reset form & selectedIds when dialog opens or expense changes
   useEffect(() => {
     if (open) {
+      const initial = expense.splits.map(s => s.userId);
+      setSelectedIds(initial);
       form.reset({
         description: expense.description,
         amount: expense.amount,
         date: parseISO(expense.date),
         categoryId: expense.categoryId,
         splitType: expense.splitType,
-        participants: expense.splits.map(s => s.userId),
-        customSplits: Object.fromEntries(
-          expense.splits.map(s => [s.userId, s.amount])
-        ),
+        participants: initial,
+        customSplits: Object.fromEntries(expense.splits.map(s => [s.userId, s.amount])),
       });
     }
   }, [open, expense]);
 
+  // Sync selectedIds → RHF participants field for Zod validation on submit
+  useEffect(() => {
+    form.setValue("participants", selectedIds);
+  }, [selectedIds]);
+
   const splitType = form.watch("splitType");
   const amount = form.watch("amount");
-  const participants = form.watch("participants");
   const customSplits = form.watch("customSplits");
 
-  const safeParticipants = participants ?? [];
-
-  const participantSplitTotal = safeParticipants.reduce((acc, userId) => {
+  // Use selectedIds (not form.watch) — always a safe defined array
+  const participantSplitTotal = selectedIds.reduce((acc, userId) => {
     const val = Number(customSplits?.[userId]);
     return acc + (isNaN(val) ? 0 : val);
   }, 0);
@@ -120,7 +127,6 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
       return;
     }
 
-    // Date must stay within the same month
     const newMonth = format(data.date, "yyyy-MM");
     if (newMonth !== expenseMonth) {
       form.setError("date", {
@@ -129,7 +135,6 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
       return;
     }
 
-    // Validate custom splits
     if (data.splitType === "custom") {
       const total = data.participants.reduce((acc, userId) => {
         const val = Number(data.customSplits?.[userId]);
@@ -144,14 +149,12 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
     }
 
     let splits: Split[] = [];
-
     if (data.splitType === "equal") {
       const splitAmount = data.amount / data.participants.length;
       splits = data.participants.map(userId => ({
         userId,
         amount: Number(splitAmount.toFixed(2)),
       }));
-      // Fix rounding error — put diff on first participant
       const currentSum = splits.reduce((sum, s) => sum + s.amount, 0);
       const diff = Number((data.amount - currentSum).toFixed(2));
       if (diff !== 0 && splits.length > 0) {
@@ -165,7 +168,7 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
     }
 
     const updatedExpense: Expense = {
-      ...expense, // preserve id, serialNo, paidBy, createdAt, month
+      ...expense,
       date: format(data.date, "yyyy-MM-dd"),
       description: data.description,
       amount: data.amount,
@@ -187,6 +190,22 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
 
   const payer = users.find(u => u.id === expense.paidBy);
 
+  // ── Participant toggle helpers ─────────────────────────────────────────────
+  const allSelected = users.length > 0 && users.every(u => selectedIds.includes(u.id));
+
+  const handleSelectAll = () => {
+    if (users.length === 0) return;
+    setSelectedIds(allSelected ? [] : users.map(u => u.id));
+  };
+
+  const handleToggle = (userId: string) => {
+    setSelectedIds(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
@@ -202,7 +221,6 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
 
-            {/* Description */}
             <FormField
               control={form.control}
               name="description"
@@ -217,7 +235,6 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
               )}
             />
 
-            {/* Amount + Category */}
             <div className="flex gap-4">
               <FormField
                 control={form.control}
@@ -228,20 +245,13 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
                     <FormControl>
                       <div className="relative">
                         <span className="absolute left-3 top-2.5 text-muted-foreground">₹</span>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          className="pl-7 font-mono"
-                          placeholder="0.00"
-                          {...field}
-                        />
+                        <Input type="number" step="0.01" className="pl-7 font-mono" placeholder="0.00" {...field} />
                       </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="categoryId"
@@ -250,15 +260,11 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
                     <FormLabel>Category</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select" />
-                        </SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
                         {categories.map(cat => (
-                          <SelectItem key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </SelectItem>
+                          <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -274,21 +280,17 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
               name="date"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Date (must stay in {format(parseISO(`${expenseMonth}-01`), "MMMM yyyy")})</FormLabel>
+                  <FormLabel>
+                    Date (must stay in {format(parseISO(`${expenseMonth}-01`), "MMMM yyyy")})
+                  </FormLabel>
                   <Popover>
                     <PopoverTrigger asChild>
                       <FormControl>
                         <Button
                           variant="outline"
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
+                          className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
                         >
-                          {field.value
-                            ? format(field.value, "PPP")
-                            : <span>Pick a date</span>
-                          }
+                          {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
                           <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                         </Button>
                       </FormControl>
@@ -298,9 +300,7 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
                         mode="single"
                         selected={field.value}
                         onSelect={field.onChange}
-                        disabled={(date) =>
-                          date > monthEnd || date < monthStart
-                        }
+                        disabled={date => date > monthEnd || date < monthStart}
                         defaultMonth={monthStart}
                         initialFocus
                       />
@@ -320,74 +320,50 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
               </div>
             </div>
 
-            {/* Participants */}
-            <FormField
-              control={form.control}
-              name="participants"
-              render={({ field }) => {
-                const val: string[] = field.value ?? [];
-                const allIds = users.map(u => u.id);
-                const allSelected = allIds.length > 0 && allIds.every(id => val.includes(id));
+            {/* ── Participants — plain React state, no RHF field.value ── */}
+            <div className="space-y-2">
+              <div className="mb-2 flex items-center justify-between">
+                <label className="text-sm font-medium leading-none">Split Among</label>
+                {/* Select All / Unselect All */}
+                <div
+                  className="flex items-center gap-2 cursor-pointer group"
+                  onClick={handleSelectAll}
+                >
+                  <Checkbox checked={allSelected} className="pointer-events-none" />
+                  <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
+                    {allSelected ? "Unselect All" : "Select All"}
+                  </span>
+                </div>
+              </div>
 
-                return (
-                  <FormItem>
-                    <div className="mb-2 flex items-center justify-between">
-                      <FormLabel className="text-base">Split Among</FormLabel>
-
-                      {/* Select All / Unselect All */}
-                      <div
-                        className="flex items-center gap-2 cursor-pointer group"
-                        onClick={() => {
-                          if (users.length === 0) return;
-                          field.onChange(allSelected ? [] : allIds);
-                        }}
-                      >
-                        <Checkbox
-                          checked={allSelected}
-                          className="pointer-events-none"
-                        />
-                        <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
-                          {allSelected ? "Unselect All" : "Select All"}
-                        </span>
-                      </div>
+              <div className="grid grid-cols-2 gap-2">
+                {users.map(user => {
+                  const isChecked = selectedIds.includes(user.id);
+                  return (
+                    <div
+                      key={user.id}
+                      className="flex flex-row items-center gap-3 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors cursor-pointer"
+                      onClick={() => handleToggle(user.id)}
+                    >
+                      <Checkbox checked={isChecked} className="pointer-events-none" />
+                      <span className="text-sm font-normal select-none">
+                        {user.name}
+                        {user.id === expense.paidBy && (
+                          <span className="ml-1 text-xs text-primary">(Payer)</span>
+                        )}
+                      </span>
                     </div>
+                  );
+                })}
+              </div>
 
-                    {/* Individual member checkboxes — no nested FormField */}
-                    <div className="grid grid-cols-2 gap-2">
-                      {users.map(item => {
-                        const isChecked = val.includes(item.id);
-                        return (
-                          <div
-                            key={item.id}
-                            className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors cursor-pointer"
-                            onClick={() => {
-                              field.onChange(
-                                isChecked
-                                  ? val.filter(v => v !== item.id)
-                                  : [...val, item.id]
-                              );
-                            }}
-                          >
-                            <Checkbox
-                              checked={isChecked}
-                              className="pointer-events-none mt-0.5"
-                            />
-                            <FormLabel className="font-normal cursor-pointer flex-1 mb-0">
-                              {item.name}
-                              {item.id === expense.paidBy && (
-                                <span className="ml-1 text-xs text-primary">(Payer)</span>
-                              )}
-                            </FormLabel>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                );
-              }}
-            />
-
+              {/* Validation error from RHF schema */}
+              {form.formState.errors.participants && (
+                <p className="text-[0.8rem] font-medium text-destructive">
+                  {form.formState.errors.participants.message as string}
+                </p>
+              )}
+            </div>
 
             {/* Split Type */}
             <FormField
@@ -398,22 +374,8 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
                   <FormLabel>Split Type</FormLabel>
                   <FormControl>
                     <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={field.value === "equal" ? "default" : "outline"}
-                        className="flex-1"
-                        onClick={() => field.onChange("equal")}
-                      >
-                        Equal
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={field.value === "custom" ? "default" : "outline"}
-                        className="flex-1"
-                        onClick={() => field.onChange("custom")}
-                      >
-                        Custom
-                      </Button>
+                      <Button type="button" variant={field.value === "equal" ? "default" : "outline"} className="flex-1" onClick={() => field.onChange("equal")}>Equal</Button>
+                      <Button type="button" variant={field.value === "custom" ? "default" : "outline"} className="flex-1" onClick={() => field.onChange("custom")}>Custom</Button>
                     </div>
                   </FormControl>
                   <FormMessage />
@@ -421,11 +383,10 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
               )}
             />
 
-            {/* Custom Splits Input */}
             {splitType === "custom" && (
               <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm font-medium mb-2">Enter Amounts</p>
-                {users.filter(u => safeParticipants.includes(u.id)).map(u => (
+                {users.filter(u => selectedIds.includes(u.id)).map(u => (
                   <FormField
                     key={u.id}
                     control={form.control}
@@ -434,13 +395,7 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
                       <FormItem className="flex items-center gap-2 space-y-0">
                         <FormLabel className="w-24 truncate">{u.name}</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            {...field}
-                            placeholder="0.00"
-                            className="bg-background"
-                          />
+                          <Input type="number" step="0.01" {...field} placeholder="0.00" className="bg-background" />
                         </FormControl>
                       </FormItem>
                     )}
@@ -449,10 +404,8 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
                 <div className="pt-2 text-right text-sm">
                   Remaining:{" "}
                   <span className={cn("font-bold",
-                    remaining < -0.01
-                      ? "text-destructive"
-                      : remaining > 0.01
-                      ? "text-amber-500"
+                    remaining < -0.01 ? "text-destructive"
+                      : remaining > 0.01 ? "text-amber-500"
                       : "text-green-600"
                   )}>
                     ₹{remaining.toFixed(2)}
@@ -467,9 +420,7 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting
                   ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
