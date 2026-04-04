@@ -315,29 +315,46 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
             <div className="space-y-2">
               <div className="mb-2 flex items-center justify-between">
                 <label className="text-sm font-medium leading-none">Split Among</label>
-                {/* Select All / Unselect All */}
-                <div
-                  className="flex items-center gap-2 cursor-pointer group"
+                {/* Select All / Unselect All - use type=button to prevent form submit */}
+                <button
+                  type="button"
+                  className="flex items-center gap-2 group cursor-pointer"
                   onClick={handleSelectAll}
                 >
-                  <Checkbox checked={allSelected} className="pointer-events-none" />
+                  <Checkbox
+                    checked={allSelected}
+                    aria-hidden="true"
+                    className="pointer-events-none shrink-0"
+                  />
                   <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
                     {allSelected ? "Unselect All" : "Select All"}
                   </span>
-                </div>
+                </button>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 {users.map(user => {
                   const isChecked = selectedIds.includes(user.id);
                   return (
+                    // Use Checkbox with onCheckedChange + label htmlFor
+                    // This is the correct Radix pattern — avoids pointer-events-none
+                    // ambiguity where Radix button could still process events internally
                     <div
                       key={user.id}
-                      className="flex flex-row items-center gap-3 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors cursor-pointer"
-                      onClick={() => handleToggle(user.id)}
+                      className="flex flex-row items-center gap-3 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors"
                     >
-                      <Checkbox checked={isChecked} className="pointer-events-none" />
-                      <span className="text-sm font-normal select-none">{user.name}</span>
+                      <Checkbox
+                        id={`add-member-${user.id}`}
+                        checked={isChecked}
+                        onCheckedChange={() => handleToggle(user.id)}
+                        className="shrink-0"
+                      />
+                      <label
+                        htmlFor={`add-member-${user.id}`}
+                        className="text-sm font-normal flex-1 cursor-pointer select-none"
+                      >
+                        {user.name}
+                      </label>
                     </div>
                   );
                 })}

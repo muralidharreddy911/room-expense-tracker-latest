@@ -325,15 +325,20 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
               <div className="mb-2 flex items-center justify-between">
                 <label className="text-sm font-medium leading-none">Split Among</label>
                 {/* Select All / Unselect All */}
-                <div
-                  className="flex items-center gap-2 cursor-pointer group"
+                <button
+                  type="button"
+                  className="flex items-center gap-2 group cursor-pointer"
                   onClick={handleSelectAll}
                 >
-                  <Checkbox checked={allSelected} className="pointer-events-none" />
+                  <Checkbox
+                    checked={allSelected}
+                    aria-hidden="true"
+                    className="pointer-events-none shrink-0"
+                  />
                   <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
                     {allSelected ? "Unselect All" : "Select All"}
                   </span>
-                </div>
+                </button>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -342,16 +347,23 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
                   return (
                     <div
                       key={user.id}
-                      className="flex flex-row items-center gap-3 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors cursor-pointer"
-                      onClick={() => handleToggle(user.id)}
+                      className="flex flex-row items-center gap-3 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors"
                     >
-                      <Checkbox checked={isChecked} className="pointer-events-none" />
-                      <span className="text-sm font-normal select-none">
+                      <Checkbox
+                        id={`edit-member-${user.id}`}
+                        checked={isChecked}
+                        onCheckedChange={() => handleToggle(user.id)}
+                        className="shrink-0"
+                      />
+                      <label
+                        htmlFor={`edit-member-${user.id}`}
+                        className="text-sm font-normal flex-1 cursor-pointer select-none"
+                      >
                         {user.name}
                         {user.id === expense.paidBy && (
                           <span className="ml-1 text-xs text-primary">(Payer)</span>
                         )}
-                      </span>
+                      </label>
                     </div>
                   );
                 })}
