@@ -324,66 +324,70 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
             <FormField
               control={form.control}
               name="participants"
-              render={() => (
-                <FormItem>
-                  <div className="mb-2 flex items-center justify-between">
-                    <FormLabel className="text-base">Split Among</FormLabel>
-                    {/* Select All / Unselect All */}
-                    <div
-                      className="flex items-center gap-2 cursor-pointer group"
-                      onClick={() => {
-                        const allIds = users.map(u => u.id);
-                        const currentParticipants = form.getValues("participants") ?? [];
-                        const allSelected = allIds.length > 0 && allIds.every(id => currentParticipants.includes(id));
-                        // No shouldValidate — avoids RHF briefly setting participants to undefined
-                        form.setValue("participants", allSelected ? [] : allIds);
-                      }}
-                    >
-                      <Checkbox
-                        checked={safeParticipants.length === users.length && users.length > 0}
-                        className="pointer-events-none"
-                      />
-                      <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
-                        {safeParticipants.length === users.length && users.length > 0 ? "Unselect All" : "Select All"}
-                      </span>
+              render={({ field }) => {
+                const val: string[] = field.value ?? [];
+                const allIds = users.map(u => u.id);
+                const allSelected = allIds.length > 0 && allIds.every(id => val.includes(id));
+
+                return (
+                  <FormItem>
+                    <div className="mb-2 flex items-center justify-between">
+                      <FormLabel className="text-base">Split Among</FormLabel>
+
+                      {/* Select All / Unselect All */}
+                      <div
+                        className="flex items-center gap-2 cursor-pointer group"
+                        onClick={() => {
+                          if (users.length === 0) return;
+                          field.onChange(allSelected ? [] : allIds);
+                        }}
+                      >
+                        <Checkbox
+                          checked={allSelected}
+                          className="pointer-events-none"
+                        />
+                        <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
+                          {allSelected ? "Unselect All" : "Select All"}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {users.map(item => (
-                      <FormField
-                        key={item.id}
-                        control={form.control}
-                        name="participants"
-                        render={({ field }) => (
-                          <FormItem
+
+                    {/* Individual member checkboxes — no nested FormField */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {users.map(item => {
+                        const isChecked = val.includes(item.id);
+                        return (
+                          <div
                             key={item.id}
-                            className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors"
+                            className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors cursor-pointer"
+                            onClick={() => {
+                              field.onChange(
+                                isChecked
+                                  ? val.filter(v => v !== item.id)
+                                  : [...val, item.id]
+                              );
+                            }}
                           >
-                            <FormControl>
-                              <Checkbox
-                                checked={field.value?.includes(item.id) ?? false}
-                                onCheckedChange={checked =>
-                                  checked
-                                    ? field.onChange([...field.value, item.id])
-                                    : field.onChange(field.value?.filter(v => v !== item.id))
-                                }
-                              />
-                            </FormControl>
-                            <FormLabel className="font-normal cursor-pointer flex-1">
+                            <Checkbox
+                              checked={isChecked}
+                              className="pointer-events-none mt-0.5"
+                            />
+                            <FormLabel className="font-normal cursor-pointer flex-1 mb-0">
                               {item.name}
                               {item.id === expense.paidBy && (
                                 <span className="ml-1 text-xs text-primary">(Payer)</span>
                               )}
                             </FormLabel>
-                          </FormItem>
-                        )}
-                      />
-                    ))}
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
+
 
             {/* Split Type */}
             <FormField
