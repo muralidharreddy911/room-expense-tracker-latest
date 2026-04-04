@@ -92,6 +92,12 @@ export default function SettlementsPage() {
     else if (net < -0.01) myDebts.push({ to: u.id, amount: Math.abs(net) });
   });
 
+  // ── Net Balance (single source of truth — always equals Dashboard's myPaid - myShare) ──
+  // sum(owedToMe) - sum(myDebts) == dashboard netBalance mathematically
+  const totalOwedToMe = owedToMe.reduce((sum, d) => sum + d.amount, 0);
+  const totalIOweThem = myDebts.reduce((sum, d) => sum + d.amount, 0);
+  const netSettlementBalance = totalOwedToMe - totalIOweThem;
+
   // ── Settlement Handler ——— RECEIVER marks as received ──────────────────────
   // currentUser is the CREDITOR (receiver). They mark the debt as received.
   const handleMarkReceived = (fromUserId: string, amount: number) => {
@@ -189,6 +195,29 @@ export default function SettlementsPage() {
         </p>
       </div>
 
+      {/* ── Net Balance Summary (matches Dashboard exactly) ── */}
+      {selectedMonth && (
+        <div className={`flex items-center justify-between p-4 rounded-lg border-2 ${
+          netSettlementBalance > 0.01
+            ? 'border-green-500 bg-green-50 dark:bg-green-950/20'
+            : netSettlementBalance < -0.01
+            ? 'border-destructive bg-red-50 dark:bg-red-950/20'
+            : 'border-border bg-muted/30'
+        }`}>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Your Net Balance — {format(parseISO(`${selectedMonth}-01`), 'MMMM yyyy')}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              To Receive (₹{totalOwedToMe.toFixed(2)}) − To Pay (₹{totalIOweThem.toFixed(2)}) · Matches Dashboard
+            </p>
+          </div>
+          <div className={`text-2xl font-bold font-mono ${
+            netSettlementBalance >= 0 ? 'text-green-600' : 'text-destructive'
+          }`}>
+            {netSettlementBalance >= 0 ? '+' : ''}₹{Math.abs(netSettlementBalance).toFixed(2)}
+          </div>
+        </div>
+      )}
+
       {/* ── Balances ── */}
       <div className="grid gap-6 md:grid-cols-2">
 
@@ -199,7 +228,7 @@ export default function SettlementsPage() {
               <Clock className="w-4 h-4 text-destructive" />
               To Pay
               <span className="text-sm font-normal text-muted-foreground ml-auto">
-                Total: ₹{myDebts.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
+                ₹{totalIOweThem.toFixed(2)}
               </span>
             </CardTitle>
             <CardDescription>
@@ -251,7 +280,7 @@ export default function SettlementsPage() {
               <CheckCircle2 className="w-4 h-4 text-green-500" />
               To Receive
               <span className="text-sm font-normal text-muted-foreground ml-auto">
-                Total: ₹{owedToMe.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
+              Total: ₹{totalOwedToMe.toFixed(2)}
               </span>
             </CardTitle>
             <CardDescription>
