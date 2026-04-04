@@ -86,14 +86,13 @@ async function seedDefaults() {
   `;
   await sql`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS settled_at TEXT`;
 
-  // ── Fix 1: Add case-insensitive unique index on category name ───────────────
-  // This prevents duplicate categories regardless of casing (Food vs food)
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS categories_name_lower_uq
-    ON categories (LOWER(name))
-  `;
-
-  // ── Fix 1: Remove existing duplicate categories (keep oldest row per name) ──
+  // ── STEP 1: Remove duplicate categories FIRST ───────────────────────────────
+  // CRITICAL ORDER: This DELETE must run BEFORE the CREATE UNIQUE INDEX below.
+  // PostgreSQL will reject CREATE UNIQUE INDEX if the table still has duplicates.
+  // Previously this was reversed (index first, dedup second) which caused:
+  //   ERROR: could not create unique index: Key (lower(name)) is duplicated
+  // That exception crashed seedDefaults(), /api/state returned 500, and the
+  // entire app appeared empty (even though all data was safe in the database).
   await sql`
     DELETE FROM categories
     WHERE id NOT IN (
@@ -101,6 +100,12 @@ async function seedDefaults() {
       FROM categories
       GROUP BY LOWER(name)
     )
+  `;
+
+  // ── STEP 2: Create unique index (now safe — no duplicates remain) ────────────
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS categories_name_lower_uq
+    ON categories (LOWER(name))
   `;
 
   // ── Fix 1 + Admin: Use EXISTS instead of COUNT cast (avoids BigInt type issues)
