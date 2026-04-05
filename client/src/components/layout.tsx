@@ -24,6 +24,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/expenses", label: "Expenses", icon: Receipt },
+    { href: "/user-expenses", label: "User Expenses", icon: UserCircle },
     { href: "/settlements", label: "Settlements", icon: Scale },
     { href: "/profile", label: "My Profile", icon: UserCircle },
   ];
