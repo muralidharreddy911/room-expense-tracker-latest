@@ -41,7 +41,7 @@ export default function UserExpensesPage() {
         if (viewMode === 'payer') {
           return e.paidBy === selectedUserId;
         } else {
-          return e.paidBy === selectedUserId || e.splits.some(s => s.userId === selectedUserId);
+          return e.splits.some(s => s.userId === selectedUserId);
         }
       })
       .sort((a, b) => {
@@ -160,21 +160,15 @@ export default function UserExpensesPage() {
             <div>
               <p className="font-semibold text-lg">{selectedUser.name}</p>
               <p className="text-sm text-muted-foreground">
-                {viewMode === 'all' ? 'All participated and paid expenses' : 'Expenses added/paid directly'}
+                {viewMode === 'all' ? 'Expenses participated in' : 'Expenses added/paid directly'}
               </p>
             </div>
           </div>
-          <div className="flex gap-6 sm:text-right w-full sm:w-auto justify-between sm:justify-end">
-            <div>
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Total Amount Displayed</p>
-              <p className="text-xl font-bold font-mono">₹{totalAmount.toFixed(2)}</p>
+          <div className="flex sm:text-right justify-center sm:justify-end">
+            <div className="bg-primary/10 px-6 py-3 rounded-md border border-primary/20">
+              <p className="text-sm text-primary font-semibold uppercase tracking-wider mb-1 text-center sm:text-right">Total Amount</p>
+              <p className="text-3xl font-bold font-mono text-primary">₹{totalAmount.toFixed(2)}</p>
             </div>
-            {viewMode === 'all' && (
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Their Share in Displayed</p>
-                <p className="text-xl font-bold font-mono text-primary">₹{totalShareForSelectedUser.toFixed(2)}</p>
-              </div>
-            )}
           </div>
         </div>
       )}
