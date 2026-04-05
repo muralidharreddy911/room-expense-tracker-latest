@@ -141,28 +141,6 @@ export default function SettlementsPage() {
   const totalIOweThem = myDebts.reduce((sum, d) => sum + d.amount, 0);
   const netSettlementBalance = totalOwedToMe - totalIOweThem;
 
-  // ── Settlement Handler ——— RECEIVER marks as received ──────────────────────
-  // currentUser is the CREDITOR (receiver). They mark the debt as received.
-  const handleMarkReceived = (fromUserId: string, amount: number) => {
-    addSettlement({
-      id: `s${Date.now()}`,
-      fromUser: fromUserId,         // debtor
-      toUser: currentUser!.id,      // creditor = current user (receiver)
-      amount: Number(amount.toFixed(2)),
-      status: 'paid',
-      month: selectedMonth,
-      createdAt: new Date().toISOString(),
-    });
-  };
-
-  // ── Settlements history for selected month ──────────────────────────────────
-  const monthSettlements = settlements
-    .filter(s => s.month === selectedMonth)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  const paidSettlements = monthSettlements.filter(s => s.status === 'paid');
-  const pendingSettlements = monthSettlements.filter(s => s.status === 'pending');
-
   // ── No months guard ─────────────────────────────────────────────────────────
   if (availableMonths.length === 0) {
     return (
@@ -229,15 +207,6 @@ export default function SettlementsPage() {
         </div>
       )}
 
-      {/* ── Settlement ownership info banner ── */}
-      <div className="flex items-start gap-3 text-sm p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200">
-        <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-        <p>
-          <strong>How settlements work:</strong> The <em>receiver</em> (person who is owed money) confirms when
-          they've been paid. Only the receiver can click "Mark as Received".
-        </p>
-      </div>
-
       {/* ── Net Balance Summary (matches Dashboard exactly) ── */}
       {selectedMonth && (
         <div className={`flex items-center justify-between p-4 rounded-lg border-2 ${
@@ -276,7 +245,6 @@ export default function SettlementsPage() {
             </CardTitle>
             <CardDescription>
               Amounts you owe to others this month.
-              Pay them in person — the <strong>receiver</strong> will confirm receipt.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -307,7 +275,7 @@ export default function SettlementsPage() {
                       <p className="text-lg font-bold font-display text-destructive">
                         ₹{debt.amount.toFixed(2)}
                       </p>
-                      <p className="text-xs text-muted-foreground">Pay in person</p>
+                      <p className="text-xs text-muted-foreground">To Pay</p>
                     </div>
                   </div>
                 );
@@ -327,7 +295,7 @@ export default function SettlementsPage() {
               </span>
             </CardTitle>
             <CardDescription>
-              People who owe you money. Confirm once you've received payment.
+              People who owe you money this month.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -358,46 +326,6 @@ export default function SettlementsPage() {
                         ₹{debt.amount.toFixed(2)}
                       </p>
 
-                      {/* Only RECEIVER (current user) can mark as received */}
-                      {!isLocked ? (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950/20"
-                            >
-                              <CheckCircle2 className="w-3 h-3 mr-1" />
-                              Mark as Received
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Confirm Receipt</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you confirming that <strong>{user?.name}</strong> has paid you{" "}
-                                <strong>₹{debt.amount.toFixed(2)}</strong>?
-                                <br /><br />
-                                This will be recorded as a completed settlement for{" "}
-                                {selectedMonth && format(parseISO(`${selectedMonth}-01`), 'MMMM yyyy')}.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                className="bg-green-600 hover:bg-green-700"
-                                onClick={() => handleMarkReceived(debt.from, debt.amount)}
-                              >
-                                Yes, Mark as Received
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      ) : (
-                        <Badge variant="secondary" className="text-xs gap-1">
-                          <Lock className="w-2.5 h-2.5" /> Month Locked
-                        </Badge>
-                      )}
                     </div>
                   </div>
                 );
@@ -406,124 +334,6 @@ export default function SettlementsPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* ── Pending Settlements (toUser = receiver can confirm) ── */}
-      {pendingSettlements.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-amber-500" />
-              Pending Settlements
-            </CardTitle>
-            <CardDescription>
-              Payments in progress — the receiver can mark these as completed.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {pendingSettlements.map(settlement => {
-                const from = users.find(u => u.id === settlement.fromUser);
-                const to = users.find(u => u.id === settlement.toUser);
-                // Only the RECEIVER (toUser) can mark as paid
-                const isReceiver = currentUser?.id === settlement.toUser;
-                return (
-                  <div key={settlement.id} className="flex items-center gap-4 py-3 border-b last:border-0">
-                    <div className="flex items-center gap-2 flex-1">
-                      <span className="font-medium text-sm">{from?.name}</span>
-                      <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                      <span className="font-medium text-sm">{to?.name}</span>
-                    </div>
-                    <div className="font-mono font-bold">₹{settlement.amount.toFixed(2)}</div>
-                    <Badge variant="outline" className="text-amber-600 border-amber-300">Pending</Badge>
-                    {isReceiver && !isLocked && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="outline" className="border-green-500 text-green-600 hover:bg-green-50">
-                            <CheckCircle2 className="w-3 h-3 mr-1" /> Confirm Received
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Confirm Settlement</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Confirm that you received ₹{settlement.amount.toFixed(2)} from {from?.name}?
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              className="bg-green-600 hover:bg-green-700"
-                              onClick={() => updateSettlement(settlement.id, 'paid')}
-                            >
-                              Yes, Confirm
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Settlement History (paid) for selected month ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            Settlement History
-            {selectedMonth && (
-              <Badge variant="outline" className="ml-2 font-normal text-xs">
-                {format(parseISO(`${selectedMonth}-01`), 'MMMM yyyy')}
-              </Badge>
-            )}
-          </CardTitle>
-          <CardDescription>Completed payments for the selected month.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {paidSettlements.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">
-                No completed settlements for this month yet.
-              </p>
-            ) : (
-              paidSettlements.map(settlement => {
-                const from = users.find(u => u.id === settlement.fromUser);
-                const to = users.find(u => u.id === settlement.toUser);
-                return (
-                  <div key={settlement.id} className="flex items-center gap-4 py-3 border-b last:border-0">
-                    <div className="flex items-center gap-2 flex-1">
-                      <Avatar className="w-6 h-6">
-                        <AvatarImage src={from?.avatar} />
-                        <AvatarFallback>{from?.name?.[0]}</AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium text-sm">{from?.name}</span>
-                      <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                      <Avatar className="w-6 h-6">
-                        <AvatarImage src={to?.avatar} />
-                        <AvatarFallback>{to?.name?.[0]}</AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium text-sm">{to?.name}</span>
-                    </div>
-                    <div className="font-mono font-bold text-green-600">
-                      ₹{settlement.amount.toFixed(2)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {format(parseISO(settlement.createdAt), 'MMM d, yyyy')}
-                    </div>
-                    <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50 dark:bg-green-950/20">
-                      <CheckCircle2 className="w-3 h-3 mr-1" />Settled
-                    </Badge>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

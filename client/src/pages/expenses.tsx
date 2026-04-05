@@ -60,10 +60,10 @@ export default function ExpensesPage() {
   const filteredExpenses = expenses
     .filter(e => e.month === selectedMonth)
     .sort((a, b) => {
-      // Sort by serial number (ascending) — date-independent
+      // Sort by serial number (descending) — newest first
       const sa = a.serialNo ?? 0;
       const sb = b.serialNo ?? 0;
-      if (sa !== sb) return sa - sb;
+      if (sa !== sb) return sb - sa;
       return new Date(b.date).getTime() - new Date(a.date).getTime();
     });
 

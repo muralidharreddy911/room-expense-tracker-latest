@@ -47,7 +47,7 @@ export default function UserExpensesPage() {
       .sort((a, b) => {
         const sa = a.serialNo ?? 0;
         const sb = b.serialNo ?? 0;
-        if (sa !== sb) return sa - sb;
+        if (sa !== sb) return sb - sa;
         return new Date(b.date).getTime() - new Date(a.date).getTime();
       });
   }, [expenses, selectedMonth, selectedUserId, viewMode]);

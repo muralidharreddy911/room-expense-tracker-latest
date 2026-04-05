@@ -49,15 +49,13 @@ async function seedDefaults() {
   // ── Migration: serial_no column ─────────────────────────────────────────────
   await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS serial_no INTEGER`;
 
-  // ── Fix 3: Backfill serial_no for any existing expenses that have NULL ──────
-  // Uses created_at order so oldest expense gets #1; new inserts continue from MAX+1
+  // ── Fix 3: Recalculate serial_no to reset per month ─────────────────────────
+  // Overwrite all serial_no values to ensure they monotonically increase per month
   await sql`
     WITH ranked AS (
       SELECT id,
-        COALESCE((SELECT MAX(serial_no) FROM expenses WHERE serial_no IS NOT NULL), 0)
-        + ROW_NUMBER() OVER (ORDER BY created_at ASC NULLS LAST) AS new_sn
+        ROW_NUMBER() OVER (PARTITION BY month ORDER BY created_at ASC NULLS LAST) AS new_sn
       FROM expenses
-      WHERE serial_no IS NULL
     )
     UPDATE expenses
     SET serial_no = ranked.new_sn
@@ -251,10 +249,10 @@ app.post("/api/expenses", async (req: Request, res: Response) => {
       return res.status(403).json({ error: `Month ${month} is locked. Cannot add expenses.` });
     }
 
-    // 2. Calculate next serial number (always incremental, date-independent)
+    // 2. Calculate next serial number scoped by month
     // Number() cast handles cases where Neon returns BigInt for arithmetic results
     const [serialRow] = await sql`
-      SELECT COALESCE(MAX(serial_no), 0) + 1 AS next_serial FROM expenses
+      SELECT COALESCE(MAX(serial_no), 0) + 1 AS next_serial FROM expenses WHERE month = ${month}
     `;
     const next_serial = Number(serialRow.next_serial);
 
