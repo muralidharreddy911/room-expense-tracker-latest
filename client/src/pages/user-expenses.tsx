@@ -58,7 +58,15 @@ export default function UserExpensesPage() {
     
     // Calculate running total from oldest (bottom) to newest (top)
     for (let i = list.length - 1; i >= 0; i--) {
-      sum += list[i].amount;
+      let amountToSum = 0;
+      if (viewMode === 'payer') {
+        amountToSum = list[i].amount;
+      } else {
+        const split = list[i].splits.find((s: any) => s.userId === selectedUserId);
+        amountToSum = split ? split.amount : 0;
+      }
+      
+      sum += amountToSum;
       (list[i] as any).runningTotal = sum;
     }
     
@@ -66,7 +74,7 @@ export default function UserExpensesPage() {
       totalAmount: sum,
       expensesWithRunningTotal: list,
     };
-  }, [filteredExpenses]);
+  }, [filteredExpenses, viewMode, selectedUserId]);
 
   if (availableMonths.length === 0) {
     return (
