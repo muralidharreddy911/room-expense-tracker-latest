@@ -52,12 +52,21 @@ export default function UserExpensesPage() {
       });
   }, [expenses, selectedMonth, selectedUserId, viewMode]);
 
-  const totalAmount = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
-
-  const totalShareForSelectedUser = filteredExpenses.reduce((sum, e) => {
-    const split = e.splits.find(s => s.userId === selectedUserId);
-    return sum + (split?.amount || 0);
-  }, 0);
+  const { totalAmount, expensesWithRunningTotal } = useMemo(() => {
+    const list = [...filteredExpenses];
+    let sum = 0;
+    
+    // Calculate running total from oldest (bottom) to newest (top)
+    for (let i = list.length - 1; i >= 0; i--) {
+      sum += list[i].amount;
+      (list[i] as any).runningTotal = sum;
+    }
+    
+    return {
+      totalAmount: sum,
+      expensesWithRunningTotal: list,
+    };
+  }, [filteredExpenses]);
 
   if (availableMonths.length === 0) {
     return (
@@ -188,11 +197,11 @@ export default function UserExpensesPage() {
             </div>
           </div>
         ) : (
-          filteredExpenses.map((expense) => {
+          expensesWithRunningTotal.map((expense: any) => {
             const category = categories.find(c => c.id === expense.categoryId);
             const payer = users.find(u => u.id === expense.paidBy);
             const isPayer = expense.paidBy === selectedUserId;
-            const mySplit = expense.splits.find(s => s.userId === selectedUserId);
+            const mySplit = expense.splits.find((s: any) => s.userId === selectedUserId);
             
             return (
               <Card key={expense.id} className="overflow-hidden shadow-sm hover:shadow-md transition-shadow group">
@@ -257,6 +266,17 @@ export default function UserExpensesPage() {
                       </div>
                       
                     </div>
+
+                    {/* Running Total Column */}
+                    <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 sm:border-l border-border/50 pt-3 sm:pt-0 sm:pl-5 min-w-[120px] bg-muted/10 sm:bg-transparent -mx-4 sm:mx-0 px-4 sm:px-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+                        Cumulative
+                      </p>
+                      <div className="font-mono text-lg font-bold text-primary bg-primary/10 px-2 py-0.5 rounded shadow-sm border border-primary/20">
+                        ₹{expense.runningTotal.toFixed(2)}
+                      </div>
+                    </div>
+
                   </div>
                 </CardContent>
               </Card>
