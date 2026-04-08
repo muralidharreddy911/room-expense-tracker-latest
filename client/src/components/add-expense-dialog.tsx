@@ -108,7 +108,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
   const customSplits = form.watch("customSplits");
 
   // Use selectedIds (not form.watch) for remaining calculation — always safe array
-  const participantSplitTotal = selectedIds.reduce((acc, userId) => {
+  const participantSplitTotal = (selectedIds || []).reduce((acc, userId) => {
     const val = Number(customSplits?.[userId]);
     return acc + (isNaN(val) ? 0 : val);
   }, 0);
@@ -180,19 +180,19 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
   };
 
   // ── Participant toggle helpers ──────────────────────────────────────────────
-  const allSelected = users.length > 0 && users.every(u => selectedIds.includes(u.id));
+  const allSelected = (users || []).length > 0 && (users || []).every(u => (selectedIds || []).includes(u.id));
 
   const handleSelectAll = () => {
-    if (users.length === 0) return;
-    setSelectedIds(allSelected ? [] : users.map(u => u.id));
+    setSelectedIds(allSelected ? [] : (users || []).map(u => u.id));
   };
 
   const handleToggle = (userId: string) => {
-    setSelectedIds(prev =>
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
-    );
+    setSelectedIds(prev => {
+      const safePrev = prev || [];
+      return safePrev.includes(userId)
+        ? safePrev.filter(id => id !== userId)
+        : [...safePrev, userId];
+    });
   };
 
   return (
@@ -333,12 +333,9 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                {users.map(user => {
-                  const isChecked = selectedIds.includes(user.id);
+                {(users || []).map(user => {
+                  const isChecked = (selectedIds || []).includes(user.id);
                   return (
-                    // Use Checkbox with onCheckedChange + label htmlFor
-                    // This is the correct Radix pattern — avoids pointer-events-none
-                    // ambiguity where Radix button could still process events internally
                     <div
                       key={user.id}
                       className="flex flex-row items-center gap-3 rounded-md border p-3 shadow-sm hover:bg-accent/50 transition-colors"
@@ -360,10 +357,10 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
                 })}
               </div>
 
-              {/* Show validation error from RHF schema */}
-              {form.formState.errors.participants && (
+              {/* Show validation error from RHF schema safely */}
+              {form.formState.errors.participants?.message && (
                 <p className="text-[0.8rem] font-medium text-destructive">
-                  {form.formState.errors.participants.message as string}
+                  {String(form.formState.errors.participants.message)}
                 </p>
               )}
             </div>
@@ -388,7 +385,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
             {splitType === "custom" && (
               <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm font-medium mb-2">Enter Amounts</p>
-                {users.filter(u => selectedIds.includes(u.id)).map(u => (
+                {(users || []).filter(u => (selectedIds || []).includes(u.id)).map(u => (
                   <FormField
                     key={u.id}
                     control={form.control}
