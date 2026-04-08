@@ -65,6 +65,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
   // internal re-renders, causing .includes()/.reduce() to throw and blank page.
   // React.useState is always a defined array — no race conditions possible.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [splitData, setSplitData] = useState<Record<string, number>>({});
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
@@ -85,6 +86,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
     if (open && currentUser) {
       const initial = (users || []).map(u => u.id);
       setSelectedIds(initial);
+      setSplitData({});
       form.reset({
         description: "",
         amount: 0,
@@ -98,18 +100,22 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
     }
   }, [open]); // Only react to dialog open/close
 
-  // Sync selectedIds → RHF form field so Zod validates on submit
+  // Sync state → RHF form fields
   useEffect(() => {
     form.setValue("participants", selectedIds);
   }, [selectedIds]);
+
+  useEffect(() => {
+    form.setValue("customSplits", splitData);
+  }, [splitData]);
 
   const splitType = form.watch("splitType");
   const amount = form.watch("amount");
   const customSplits = form.watch("customSplits");
 
-  // Use selectedIds (not form.watch) for remaining calculation — always safe array
+  // Safe array calculation using reliable local state
   const participantSplitTotal = (selectedIds || []).reduce((acc, userId) => {
-    const val = Number(customSplits?.[userId]);
+    const val = Number(splitData?.[userId]);
     return acc + (isNaN(val) ? 0 : val);
   }, 0);
   const remaining = Number(amount || 0) - participantSplitTotal;
@@ -128,9 +134,11 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
         const val = Number(data.customSplits?.[userId]);
         return acc + (isNaN(val) ? 0 : val);
       }, 0);
-      if (total > data.amount + 0.01) {
+      
+      const diff = Math.abs(total - data.amount);
+      if (diff > 0.01) {
         form.setError("customSplits" as any, {
-          message: `Split total (₹${total.toFixed(2)}) exceeds expense amount (₹${data.amount.toFixed(2)})`,
+          message: `Split total must equal total amount. (Total: ₹${total.toFixed(2)} vs Amount: ₹${data.amount.toFixed(2)})`,
         });
         return;
       }
@@ -378,21 +386,27 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
             {splitType === "custom" && (
               <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm font-medium mb-2">Enter Amounts</p>
-                {(users || []).filter(u => (selectedIds || []).includes(u.id)).map(u => (
-                  <FormField
-                    key={u.id}
-                    control={form.control}
-                    name={`customSplits.${u.id}`}
-                    render={({ field }) => (
-                      <FormItem className="flex items-center gap-2 space-y-0">
-                        <FormLabel className="w-24 truncate">{u.name}</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.01" {...field} placeholder="0.00" className="bg-background" />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                ))}
+                <div className="space-y-2 max-h-[30vh] overflow-y-auto">
+                  {(users || []).filter(u => (selectedIds || []).includes(u.id)).map(u => (
+                    <div key={u.id} className="flex items-center gap-2 space-y-0 p-1">
+                      <label className="w-24 truncate text-sm font-medium">{u.name}</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        className="bg-background flex-1"
+                        value={splitData[u.id] || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSplitData(prev => ({
+                            ...prev,
+                            [u.id]: val === "" ? 0 : Number(val)
+                          }));
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
                 <div className="pt-2 text-right text-sm">
                   Remaining: <span className={cn("font-bold",
                     remaining < -0.01 ? "text-destructive"

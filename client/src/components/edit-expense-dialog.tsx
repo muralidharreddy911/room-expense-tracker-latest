@@ -74,6 +74,9 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
   const [selectedIds, setSelectedIds] = useState<string[]>(
     () => expense.splits.map(s => s.userId)
   );
+  const [splitData, setSplitData] = useState<Record<string, number>>(
+    () => Object.fromEntries(expense.splits.map(s => [s.userId, s.amount]))
+  );
 
   const form = useForm<EditExpenseFormValues>({
     resolver: zodResolver(editExpenseSchema),
@@ -92,7 +95,9 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
   useEffect(() => {
     if (open) {
       const initial = expense.splits.map(s => s.userId);
+      const initialSplits = Object.fromEntries(expense.splits.map(s => [s.userId, s.amount]));
       setSelectedIds(initial);
+      setSplitData(initialSplits);
       form.reset({
         description: expense.description,
         amount: expense.amount,
@@ -100,23 +105,27 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
         categoryId: expense.categoryId,
         splitType: expense.splitType,
         participants: initial,
-        customSplits: Object.fromEntries(expense.splits.map(s => [s.userId, s.amount])),
+        customSplits: initialSplits,
       });
     }
   }, [open, expense]);
 
-  // Sync selectedIds → RHF participants field for Zod validation on submit
+  // Sync states → RHF participants field for Zod validation on submit
   useEffect(() => {
     form.setValue("participants", selectedIds);
   }, [selectedIds]);
+
+  useEffect(() => {
+    form.setValue("customSplits", splitData);
+  }, [splitData]);
 
   const splitType = form.watch("splitType");
   const amount = form.watch("amount");
   const customSplits = form.watch("customSplits");
 
-  // Use selectedIds (not form.watch) — always a safe defined array
+  // Safe manual calculations using bound components
   const participantSplitTotal = (selectedIds || []).reduce((acc, userId) => {
-    const val = Number(customSplits?.[userId]);
+    const val = Number(splitData?.[userId]);
     return acc + (isNaN(val) ? 0 : val);
   }, 0);
   const remaining = Number(amount || 0) - participantSplitTotal;
@@ -140,9 +149,11 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
         const val = Number(data.customSplits?.[userId]);
         return acc + (isNaN(val) ? 0 : val);
       }, 0);
-      if (total > data.amount + 0.01) {
+      
+      const diff = Math.abs(total - data.amount);
+      if (diff > 0.01) {
         form.setError("customSplits" as any, {
-          message: `Split total (₹${total.toFixed(2)}) exceeds expense amount (₹${data.amount.toFixed(2)})`,
+          message: `Split total must equal total amount. (Total: ₹${total.toFixed(2)} vs Amount: ₹${data.amount.toFixed(2)})`,
         });
         return;
       }
@@ -391,21 +402,27 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
             {splitType === "custom" && (
               <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm font-medium mb-2">Enter Amounts</p>
-                {(users || []).filter(u => (selectedIds || []).includes(u.id)).map(u => (
-                  <FormField
-                    key={u.id}
-                    control={form.control}
-                    name={`customSplits.${u.id}`}
-                    render={({ field }) => (
-                      <FormItem className="flex items-center gap-2 space-y-0">
-                        <FormLabel className="w-24 truncate">{u.name}</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.01" {...field} placeholder="0.00" className="bg-background" />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                ))}
+                <div className="space-y-2 max-h-[30vh] overflow-y-auto">
+                  {(users || []).filter(u => (selectedIds || []).includes(u.id)).map(u => (
+                    <div key={u.id} className="flex items-center gap-2 space-y-0 p-1">
+                      <label className="w-24 truncate text-sm font-medium">{u.name}</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        className="bg-background flex-1"
+                        value={splitData[u.id] || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSplitData(prev => ({
+                            ...prev,
+                            [u.id]: val === "" ? 0 : Number(val)
+                          }));
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
                 <div className="pt-2 text-right text-sm">
                   Remaining:{" "}
                   <span className={cn("font-bold",
