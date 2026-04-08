@@ -83,7 +83,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
   // Reset everything when dialog opens
   useEffect(() => {
     if (open && currentUser) {
-      const initial = users.map(u => u.id);
+      const initial = (users || []).map(u => u.id);
       setSelectedIds(initial);
       form.reset({
         description: "",
@@ -183,7 +183,7 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
   const allSelected = (users || []).length > 0 && (users || []).every(u => (selectedIds || []).includes(u.id));
 
   const handleSelectAll = () => {
-    setSelectedIds(allSelected ? [] : (users || []).map(u => u.id));
+    setSelectedIds([]);
   };
 
   const handleToggle = (userId: string) => {
@@ -315,20 +315,13 @@ export function AddExpenseDialog({ children }: { children?: React.ReactNode }) {
             <div className="space-y-2">
               <div className="mb-2 flex items-center justify-between">
                 <label className="text-sm font-medium leading-none">Split Among</label>
-                {/* Select All / Unselect All - use type=button to prevent form submit */}
+                {/* Unselect All - use type=button to prevent form submit */}
                 <button
                   type="button"
-                  className="flex items-center gap-2 group cursor-pointer"
+                  className="flex items-center gap-2 group cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors select-none"
                   onClick={handleSelectAll}
                 >
-                  <Checkbox
-                    checked={allSelected}
-                    aria-hidden="true"
-                    className="pointer-events-none shrink-0"
-                  />
-                  <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors select-none">
-                    {allSelected ? "Unselect All" : "Select All"}
-                  </span>
+                  Unselect All
                 </button>
               </div>
 
