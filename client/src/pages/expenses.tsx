@@ -1,6 +1,6 @@
 import { useApp } from "@/hooks/use-app-store";
-import { format, parseISO } from "date-fns";
-import { useState, useEffect } from "react";
+import { format, isValid, parseISO } from "date-fns";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AddExpenseDialog } from "@/components/add-expense-dialog";
@@ -8,7 +8,8 @@ import { EditExpenseDialog } from "@/components/edit-expense-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, AlertCircle, Lock, Loader2, Pencil, RefreshCw, CalendarX } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Trash2, AlertCircle, Lock, Loader2, Pencil, RefreshCw, CalendarX, Filter, X } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,10 +32,21 @@ export default function ExpensesPage() {
   } = useApp();
 
   // ── Month selector — only shows admin-created months (no auto calendar month) ──
-  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  // For testing: default to 2026-01
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-01');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expenseToEdit, setExpenseToEdit] = useState<Expense | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // ── Filters ──
+  const [paidByFilter, setPaidByFilter] = useState<string>('all');
+  const [involvedInFilter, setInvolvedInFilter] = useState<string>('all');
+
+  // Reset filters when month changes
+  useEffect(() => {
+    setPaidByFilter('all');
+    setInvolvedInFilter('all');
+  }, [selectedMonth]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -48,24 +60,45 @@ export default function ExpensesPage() {
     }
   };
 
-  // Set default to most recent available month once loaded
+  // Set default to 2026-01 for testing, then most recent available month
   useEffect(() => {
-    if (availableMonths.length > 0 && !selectedMonth) {
-      setSelectedMonth(availableMonths[0]); // already sorted newest first
+    if (availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
+      if (availableMonths.includes('2026-01')) {
+        setSelectedMonth('2026-01');
+      } else {
+        setSelectedMonth(availableMonths[0]); // already sorted newest first
+      }
     }
   }, [availableMonths]);
 
   const isLocked = selectedMonth ? isMonthLocked(selectedMonth) : false;
 
-  const filteredExpenses = expenses
-    .filter(e => e.month === selectedMonth)
-    .sort((a, b) => {
-      // Sort by serial number (descending) — newest first
-      const sa = a.serialNo ?? 0;
-      const sb = b.serialNo ?? 0;
-      if (sa !== sb) return sb - sa;
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
+  // Check if any filters are active
+  const hasActiveFilters = paidByFilter !== 'all' || involvedInFilter !== 'all';
+
+  const clearFilters = () => {
+    setPaidByFilter('all');
+    setInvolvedInFilter('all');
+  };
+
+  const filteredExpenses = useMemo(() => {
+    return expenses
+      .filter(e => e.month === selectedMonth)
+      .filter(e => {
+        // Paid By filter
+        if (paidByFilter !== 'all' && e.paidBy !== paidByFilter) return false;
+        // Involved In filter
+        if (involvedInFilter !== 'all' && !e.splits.some(s => s.userId === involvedInFilter)) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        // Sort by serial number (descending) — newest first
+        const sa = a.serialNo ?? 0;
+        const sb = b.serialNo ?? 0;
+        if (sa !== sb) return sb - sa;
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+  }, [expenses, selectedMonth, paidByFilter, involvedInFilter]);
 
   const handleDelete = async (expenseId: string) => {
     setDeletingId(expenseId);
@@ -141,6 +174,76 @@ export default function ExpensesPage() {
           </div>
         </div>
 
+        {/* ── Filters Panel ── */}
+        <Card className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Filters</span>
+              {hasActiveFilters && (
+                <Badge variant="default" className="h-5 px-1.5 text-xs">
+                  Active
+                </Badge>
+              )}
+            </div>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1 text-muted-foreground h-7">
+                <X className="w-3 h-3" />
+                Clear
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Paid By Filter */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Paid By</Label>
+                  <Select value={paidByFilter} onValueChange={setPaidByFilter}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="All users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All users</SelectItem>
+                      {users.map(user => (
+                        <SelectItem key={user.id} value={user.id}>
+                          <span className="flex items-center gap-2">
+                            <Avatar className="w-5 h-5">
+                              <AvatarImage src={user.avatar} />
+                              <AvatarFallback>{user.name[0]}</AvatarFallback>
+                            </Avatar>
+                            {user.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Involved In Filter */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Involved In</Label>
+                  <Select value={involvedInFilter} onValueChange={setInvolvedInFilter}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="All users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All users</SelectItem>
+                      {users.map(user => (
+                        <SelectItem key={user.id} value={user.id}>
+                          <span className="flex items-center gap-2">
+                            <Avatar className="w-5 h-5">
+                              <AvatarImage src={user.avatar} />
+                              <AvatarFallback>{user.name[0]}</AvatarFallback>
+                            </Avatar>
+                            {user.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </Card>
+
         {/* ── Locked Month Banner ── */}
         {isLocked && (
           <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-4 rounded-lg flex items-center gap-3 text-amber-800 dark:text-amber-200">
@@ -155,7 +258,8 @@ export default function ExpensesPage() {
         {filteredExpenses.length > 0 && (
           <div className="flex items-center justify-between px-1">
             <span className="text-sm text-muted-foreground">
-              {filteredExpenses.length} expense{filteredExpenses.length !== 1 ? 's' : ''} this month
+              {filteredExpenses.length} expense{filteredExpenses.length !== 1 ? 's' : ''}
+              {hasActiveFilters ? ' (filtered)' : ' this month'}
             </span>
             <span className="text-sm font-semibold">
               Total: <span className="font-mono">₹{totalForMonth.toFixed(2)}</span>
@@ -168,9 +272,20 @@ export default function ExpensesPage() {
           {filteredExpenses.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
               <AlertCircle className="w-8 h-8 mx-auto mb-3 opacity-40" />
-              <p className="font-medium">No expenses recorded for this month.</p>
-              {!isLocked && (
-                <p className="text-xs mt-1">Click "Add Expense" to get started.</p>
+              {hasActiveFilters ? (
+                <>
+                  <p className="font-medium">No expenses match your filters.</p>
+                  <Button variant="link" size="sm" onClick={clearFilters} className="mt-2">
+                    Clear filters
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium">No expenses recorded for this month.</p>
+                  {!isLocked && (
+                    <p className="text-xs mt-1">Click "Add Expense" to get started.</p>
+                  )}
+                </>
               )}
             </div>
           ) : (
@@ -178,6 +293,10 @@ export default function ExpensesPage() {
               const payer = users.find(u => u.id === expense.paidBy);
               const category = categories.find(c => c.id === expense.categoryId);
               const isDeleting = deletingId === expense.id;
+              const createdAtDate = expense.createdAt ? parseISO(expense.createdAt) : null;
+              const addedAtText = createdAtDate && isValid(createdAtDate)
+                ? format(createdAtDate, 'dd MMM yyyy, hh:mm a')
+                : null;
 
               // Only the payer can delete/edit, only in unlocked months
               const isPayer = currentUser?.id === expense.paidBy;
@@ -196,16 +315,18 @@ export default function ExpensesPage() {
                     {/* ── Left: Serial + Date + Info ── */}
                     <div className="flex items-start gap-4 flex-1 min-w-0">
                       {/* Serial + Date badge */}
-                      <div className="flex flex-col items-center justify-center bg-background border rounded-lg p-2 w-14 h-14 shadow-sm flex-shrink-0">
+                      <div className="flex flex-col items-center justify-center bg-background border rounded-lg p-2 w-20 min-h-16 shadow-sm flex-shrink-0">
                         <span className="text-[10px] font-bold text-primary/70 uppercase tracking-wide">
                           #{expense.serialNo ?? '—'}
-                        </span>
-                        <span className="text-xs font-bold text-muted-foreground uppercase">
-                          {format(parseISO(expense.date), 'MMM')}
                         </span>
                         <span className="text-lg font-bold font-display leading-tight">
                           {format(parseISO(expense.date), 'dd')}
                         </span>
+                        {addedAtText && (
+                          <span className="text-[10px] text-muted-foreground mt-1 leading-tight text-center">
+                            {format(parseISO(expense.createdAt), 'hh:mm a')}
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex-1 min-w-0">

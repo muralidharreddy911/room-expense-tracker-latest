@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Receipt, TrendingUp, Users, Wallet, Lock, CalendarX, RefreshCw } from "lucide-react";
 import { useState, useEffect } from "react";
+import ThemeToggle from "@/components/theme-toggle";
 
 export default function Dashboard() {
   const {
@@ -27,7 +28,8 @@ export default function Dashboard() {
   } = useApp();
 
   // ── Month Selector (only admin-created months) ───────────────────────────────
-  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  // For testing: default to 2026-01
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-01');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
@@ -40,12 +42,16 @@ export default function Dashboard() {
     }
   };
 
-  // Default to the most recent unlocked month (or first available)
+  // Default to 2026-01 for testing, then most recent unlocked month
   useEffect(() => {
-    if (availableMonths.length > 0 && !selectedMonth) {
-      // Prefer an unlocked month
-      const firstUnlocked = availableMonths.find(m => !isMonthLocked(m));
-      setSelectedMonth(firstUnlocked ?? availableMonths[0]);
+    if (availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
+      // If 2026-01 is available, use it; otherwise prefer an unlocked month
+      if (availableMonths.includes('2026-01')) {
+        setSelectedMonth('2026-01');
+      } else {
+        const firstUnlocked = availableMonths.find(m => !isMonthLocked(m));
+        setSelectedMonth(firstUnlocked ?? availableMonths[0]);
+      }
     }
   }, [availableMonths]);
 
@@ -137,6 +143,8 @@ export default function Dashboard() {
           <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isRefreshing} title="Refresh data">
             <RefreshCw className={`w-4 h-4 transition-transform ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
+
+          <ThemeToggle />
 
           {/* Only show Add Expense when there's an active unlocked month */}
           {!isLocked && selectedMonth && !hasNoMonths && <AddExpenseDialog />}

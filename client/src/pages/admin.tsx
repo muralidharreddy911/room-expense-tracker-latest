@@ -2,12 +2,13 @@ import { useApp } from "@/hooks/use-app-store";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Lock, Unlock, Plus, Trash2, UserPlus, Tag } from "lucide-react";
 import { format, subMonths } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,12 +22,27 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export default function AdminPage() {
-  const { categories, addCategory, deleteCategory, monthStatus, lockMonth, unlockMonth, addMonth, users, addUser, removeUser } = useApp();
+  const { categories, addCategory, deleteCategory, monthStatus, lockMonth, unlockMonth, deleteMonth, addMonth, users, addUser, removeUser, expenses, settlements, getActiveUsersByMonth, setActiveUsersByMonth } = useApp();
   const [newCategory, setNewCategory] = useState("");
   const [newUserName, setNewUserName] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<"admin" | "member">("member");
   const [newMonth, setNewMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [activeUserMonth, setActiveUserMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [activeUserIds, setActiveUserIds] = useState<string[]>([]);
+
+  const monthOptions = useMemo(() => {
+    const months = new Set(monthStatus.map((m) => m.month));
+    months.add(activeUserMonth);
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [monthStatus, activeUserMonth]);
+
+  useEffect(() => {
+    (async () => {
+      const ids = await getActiveUsersByMonth(activeUserMonth);
+      setActiveUserIds(ids);
+    })();
+  }, [activeUserMonth, getActiveUsersByMonth]);
 
   const handleAddCategory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +66,15 @@ export default function AdminPage() {
     }
   };
 
+  const toggleActiveUser = async (userId: string, checked: boolean) => {
+    const next = checked
+      ? Array.from(new Set([...activeUserIds, userId]))
+      : activeUserIds.filter((id) => id !== userId);
+
+    setActiveUserIds(next);
+    await setActiveUsersByMonth(activeUserMonth, next);
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
@@ -64,7 +89,7 @@ export default function AdminPage() {
         <Card>
           <CardHeader>
             <CardTitle>Member Management</CardTitle>
-            <CardDescription>Add or remove room members.</CardDescription>
+            <CardDescription>Add/remove members and mark monthly active members.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <form onSubmit={handleAddUser} className="space-y-3">
@@ -98,10 +123,32 @@ export default function AdminPage() {
                 </div>
               </div>
             </form>
+            <div className="space-y-2 rounded-lg border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium">Active users for month</p>
+                <Select value={activeUserMonth} onValueChange={setActiveUserMonth}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((month) => (
+                      <SelectItem key={month} value={month}>{month}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                If Telegram message does not mention users, bot will split only among checked users.
+              </p>
+            </div>
             <div className="space-y-2">
               {users.map(user => (
                 <div key={user.id} className="flex items-center justify-between p-2 rounded-lg border bg-card">
                   <div className="flex items-center gap-3">
+                    <Checkbox
+                      checked={activeUserIds.includes(user.id)}
+                      onCheckedChange={(checked) => toggleActiveUser(user.id, Boolean(checked))}
+                    />
                     <Avatar className="h-8 w-8">
                       <AvatarImage src={user.avatar} />
                       <AvatarFallback>{user.name[0]}</AvatarFallback>
@@ -231,6 +278,9 @@ export default function AdminPage() {
               {monthStatus.sort((a, b) => b.month.localeCompare(a.month)).map(status => {
                 const month = status.month;
                 const isLocked = status.isLocked;
+                const hasExpenses = expenses.some(e => e.month === month);
+                const hasSettlements = settlements.some(s => s.month === month);
+                const canDelete = !hasExpenses && !hasSettlements;
 
                 return (
                   <div key={month} className="flex items-center justify-between p-3 border rounded-lg">
@@ -238,43 +288,81 @@ export default function AdminPage() {
                       {isLocked ? <Lock className="w-4 h-4 text-amber-600" /> : <Unlock className="w-4 h-4 text-green-600" />}
                       <span className="font-medium font-mono">{month}</span>
                     </div>
-                    {isLocked ? (
+                    <div className="flex items-center gap-2">
+                      {isLocked ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="outline" className="border-amber-500 text-amber-700 hover:bg-amber-50">Unlock</Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Unlock Month?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Unlocking <strong>{month}</strong> will allow expenses and settlements to be added again.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => unlockMonth(month)}>Unlock</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="secondary">Lock Month</Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Lock Month?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Locking <strong>{month}</strong> will prevent any further edits or expense additions. This cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => lockMonth(month)}>Lock</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                      {/* Delete Month Button */}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="outline" className="border-amber-500 text-amber-700 hover:bg-amber-50">Unlock</Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            disabled={!canDelete}
+                            title={canDelete ? "Delete month" : "Cannot delete: month has expenses or settlements"}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Unlock Month?</AlertDialogTitle>
+                            <AlertDialogTitle>Delete Month?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Unlocking <strong>{month}</strong> will allow expenses and settlements to be added again.
+                              Are you sure you want to delete <strong>{month}</strong>? This action cannot be undone.
+                              {!canDelete && (
+                                <><br /><br /><span className="text-destructive">This month has expenses or settlements. Delete them first.</span></>
+                              )}
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => unlockMonth(month)}>Unlock</AlertDialogAction>
+                            {canDelete && (
+                              <AlertDialogAction
+                                className="bg-destructive hover:bg-destructive/90"
+                                onClick={() => deleteMonth(month)}
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            )}
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                    ) : (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="secondary">Lock Month</Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Lock Month?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Locking <strong>{month}</strong> will prevent any further edits or expense additions. This cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => lockMonth(month)}>Lock</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
+                    </div>
                   </div>
                 );
               })}

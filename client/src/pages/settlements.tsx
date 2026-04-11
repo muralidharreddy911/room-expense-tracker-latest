@@ -27,7 +27,8 @@ export default function SettlementsPage() {
   } = useApp();
 
   // ── Month Selector ──────────────────────────────────────────────────────────
-  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  // For testing: default to 2026-01
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-01');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
@@ -40,11 +41,15 @@ export default function SettlementsPage() {
     }
   };
 
+  // Default to 2026-01 for testing, then most recent unlocked month
   useEffect(() => {
-    if (availableMonths.length > 0 && !selectedMonth) {
-      // Prefer the most recent unlocked month
-      const firstUnlocked = availableMonths.find(m => !isMonthLocked(m));
-      setSelectedMonth(firstUnlocked ?? availableMonths[0]);
+    if (availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
+      if (availableMonths.includes('2026-01')) {
+        setSelectedMonth('2026-01');
+      } else {
+        const firstUnlocked = availableMonths.find(m => !isMonthLocked(m));
+        setSelectedMonth(firstUnlocked ?? availableMonths[0]);
+      }
     }
   }, [availableMonths]);
 

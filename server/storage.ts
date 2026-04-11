@@ -1,6 +1,6 @@
-import { users, categories, monthStatus, settlements, expenses, type User, type InsertUser } from "@shared/schema";
+import { users, categories, monthStatus, settlements, expenses, activeUsersByMonth, type User, type InsertUser } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -25,6 +25,11 @@ export interface IStorage {
 
   // Month Status
   upsertMonthStatus(month: string, isLocked: boolean): Promise<any>;
+  deleteMonth(month: string): Promise<void>;
+
+  // Active users by month
+  getActiveUsers(month: string): Promise<User[]>;
+  setActiveUsers(month: string, userIds: string[]): Promise<void>;
 
   // Settlements
   createSettlement(settlement: any): Promise<any>;
@@ -109,6 +114,42 @@ export class DatabaseStorage implements IStorage {
       const [created] = await db.insert(monthStatus).values({ month, isLocked }).returning();
       return created;
     }
+  }
+
+  async deleteMonth(month: string): Promise<void> {
+    await db.delete(monthStatus).where(eq(monthStatus.month, month));
+  }
+
+  async getActiveUsers(month: string): Promise<User[]> {
+    const links = await db
+      .select()
+      .from(activeUsersByMonth)
+      .where(and(eq(activeUsersByMonth.month, month), eq(activeUsersByMonth.isActive, true)));
+
+    if (links.length === 0) {
+      return [];
+    }
+
+    const allUsers = await db.select().from(users);
+    const activeIds = new Set(links.map((l) => l.userId));
+    return allUsers.filter((u) => activeIds.has(u.id));
+  }
+
+  async setActiveUsers(month: string, userIds: string[]): Promise<void> {
+    await db.delete(activeUsersByMonth).where(eq(activeUsersByMonth.month, month));
+
+    if (userIds.length === 0) {
+      return;
+    }
+
+    await db.insert(activeUsersByMonth).values(
+      userIds.map((userId) => ({
+        month,
+        userId,
+        isActive: true,
+        updatedAt: new Date().toISOString(),
+      }))
+    );
   }
 
   async createSettlement(settlement: any): Promise<any> {
