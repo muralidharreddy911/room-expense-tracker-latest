@@ -634,16 +634,23 @@ function formatParseError(): string {
 }
 
 // Helper to send Telegram message using fetch (more reliable in serverless)
-async function sendTelegramMessage(token: string, chatId: number, text: string): Promise<void> {
+async function sendTelegramMessage(token: string, chatId: number | string, text: string): Promise<void> {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`Telegram API error: ${response.status} - ${errorText}`);
+  console.log(`Sending Telegram message to chat ${chatId}`);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      console.error(`Telegram API error: ${response.status}`, result);
+    } else {
+      console.log(`Telegram message sent successfully to ${chatId}`);
+    }
+  } catch (err) {
+    console.error(`Failed to send Telegram message:`, err);
   }
 }
 
