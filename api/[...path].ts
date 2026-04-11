@@ -1,12 +1,261 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { neon } from "@neondatabase/serverless";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import TelegramBot from "node-telegram-bot-api";
+import { format } from "date-fns";
+import { parseExpenseMessage, inferCategory, type ParsedExpenseDraft, type ParserUser } from "../server/services/expense-parser";
 
 // ─── Raw SQL Client ───────────────────────────────────────────────────────────
 function getSql() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
   return neon(url);
+}
+
+// ─── Telegram Bot Helpers ─────────────────────────────────────────────────────
+interface BotUser {
+  id: string;
+  name: string;
+  username: string;
+  role: string;
+}
+
+interface BotCategory {
+  id: string;
+  name: string;
+}
+
+function findUserByTelegramName(users: BotUser[], telegramFirstName: string, telegramUsername?: string): BotUser | undefined {
+  const firstName = telegramFirstName.toLowerCase();
+  let user = users.find((u) => u.name.toLowerCase() === firstName);
+  if (user) return user;
+  user = users.find((u) => u.name.toLowerCase().startsWith(firstName));
+  if (user) return user;
+  if (telegramUsername) {
+    const username = telegramUsername.toLowerCase();
+    user = users.find((u) => u.username?.toLowerCase() === username || u.name.toLowerCase() === username);
+  }
+  return user;
+}
+
+function buildEqualSplits(participants: Array<{ id: string }>, amount: number): { userId: string; amount: number }[] {
+  if (participants.length === 0) return [];
+  const equal = Math.round((amount / participants.length) * 100) / 100;
+  const splits = participants.map((p) => ({ userId: p.id, amount: equal }));
+  const currentTotal = splits.reduce((sum, s) => sum + s.amount, 0);
+  const diff = Math.round((amount - currentTotal) * 100) / 100;
+  if (Math.abs(diff) > 0 && splits.length > 0) {
+    splits[splits.length - 1].amount = Math.round((splits[splits.length - 1].amount + diff) * 100) / 100;
+  }
+  return splits;
+}
+
+function formatSingleExpenseResponse(entry: {
+  draft: ParsedExpenseDraft;
+  payerName: string;
+  splitUsers: string[];
+  splits: Array<{ userName: string; amount: number }>;
+  perHeadInfo?: { amount: number; count: number };
+}): string {
+  const splitLines = entry.splits.map((s) => `- ${s.userName} -> ₹${s.amount.toFixed(2)}`).join("\n");
+  const perHeadLine = entry.perHeadInfo
+    ? `🔢 Per head: ₹${entry.perHeadInfo.amount.toFixed(2)} × ${entry.perHeadInfo.count} active users`
+    : null;
+  return [
+    "✅ Expense Added!",
+    "",
+    `🧾 Type: ${entry.draft.type}`,
+    `💰 Total: ₹${entry.draft.amount.toFixed(2)}`,
+    perHeadLine,
+    `👤 Paid by: ${entry.payerName}`,
+    `👥 Split between: ${entry.splitUsers.join(", ")}`,
+    "",
+    "💸 Split:",
+    splitLines,
+    "",
+    `📅 Date: ${format(new Date(entry.draft.date), "dd MMM yyyy")}`,
+  ].filter(Boolean).join("\n");
+}
+
+function formatMultipleExpensesResponse(entries: Array<{ draft: ParsedExpenseDraft }>, defaultedToActive: boolean): string {
+  const header = `✅ ${entries.length} Expenses Added!`;
+  const lines = entries.map((e, idx) => `${idx + 1}️⃣ ${e.draft.type} - ₹${e.draft.amount.toFixed(2)}`);
+  const splitLine = defaultedToActive ? "👥 Split among: All active members" : "👥 Split among: Mentioned members";
+  return [header, "", ...lines, "", splitLine].join("\n");
+}
+
+function formatParseError(): string {
+  return [
+    "❌ Couldn't understand the message",
+    "👉 Try formats like:",
+    '- "Curd 30"',
+    '- "Food 250 Murali 125 Gani 125"',
+  ].join("\n");
+}
+
+async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.log("TELEGRAM_BOT_TOKEN not set. Skipping telegram update.");
+    return;
+  }
+
+  const bot = new TelegramBot(token, { polling: false });
+  const msg = update.message;
+  if (!msg || !msg.text) return;
+
+  const text = msg.text.trim();
+  const chatId = msg.chat.id;
+
+  // Handle /start command
+  if (text === "/start") {
+    await bot.sendMessage(chatId, [
+      "🏠 Room Expense Bot",
+      "",
+      "Send natural messages like:",
+      '- "Curd 30"',
+      '- "Yesterday vegetables 50"',
+      '- "Food 250 Murali 125 Gani 125"',
+    ].join("\n"));
+    return;
+  }
+
+  // Handle /help command
+  if (text === "/help") {
+    await bot.sendMessage(chatId, formatParseError());
+    return;
+  }
+
+  // Skip other commands
+  if (text.startsWith("/")) return;
+
+  try {
+    const sql = getSql();
+    await seedDefaults(); // Ensure tables exist
+
+    // Get app state
+    const [users, categories, monthStatus] = await Promise.all([
+      sql`SELECT * FROM users ORDER BY name`,
+      sql`SELECT *, is_default AS "isDefault" FROM categories ORDER BY name`,
+      sql`SELECT *, is_locked AS "isLocked" FROM month_status ORDER BY month DESC`,
+    ]);
+
+    const payer = findUserByTelegramName(users as BotUser[], msg.from?.first_name || "", msg.from?.username);
+    if (!payer) {
+      console.log(`Telegram user not found: ${msg.from?.first_name} / @${msg.from?.username}`);
+      return;
+    }
+
+    const drafts = parseExpenseMessage({
+      text,
+      users: users as ParserUser[],
+      categories: categories as BotCategory[],
+      sender: payer,
+      now: new Date(),
+    });
+
+    if (drafts.length === 0) {
+      if (/\d/.test(text)) {
+        await bot.sendMessage(chatId, formatParseError());
+      }
+      return;
+    }
+
+    const savedEntries: Array<{
+      draft: ParsedExpenseDraft;
+      splitUsers: string[];
+      splits: Array<{ userName: string; amount: number }>;
+    }> = [];
+
+    for (const draft of drafts) {
+      const month = draft.date.slice(0, 7);
+      const monthLocked = (monthStatus as any[]).find((m) => m.month === month)?.isLocked;
+      if (monthLocked) continue;
+
+      // For default-all mode, fetch active users for the month
+      let participants: BotUser[];
+      if (draft.userSelectionMode === "mentioned") {
+        participants = draft.participants as BotUser[];
+      } else {
+        // Get active users for the month
+        const activeLinks = await sql`
+          SELECT user_id FROM active_users_by_month
+          WHERE month = ${month} AND is_active = TRUE
+        `;
+        if (activeLinks.length > 0) {
+          const activeIds = new Set(activeLinks.map((l: any) => l.user_id));
+          participants = (users as BotUser[]).filter((u) => activeIds.has(u.id));
+        } else {
+          participants = users as BotUser[];
+        }
+      }
+      if (participants.length === 0) continue;
+
+      let effectiveAmount = draft.amount;
+      let splits: { userId: string; amount: number }[];
+
+      if (draft.userSelectionMode === "default-all" && typeof draft.perHeadAmount === "number" && draft.perHeadAmount > 0) {
+        splits = participants.map((p) => ({ userId: p.id, amount: draft.perHeadAmount as number }));
+        effectiveAmount = Math.round(draft.perHeadAmount * participants.length * 100) / 100;
+      } else {
+        splits = draft.splits.length > 0
+          ? draft.splits.map((s) => ({ userId: s.userId, amount: s.amount }))
+          : buildEqualSplits(participants, draft.amount);
+      }
+
+      const splitUsers = participants.map((p) => p.name);
+      const splitLabelMap = new Map<string, string>((users as BotUser[]).map((u) => [u.id, u.name]));
+      const splitDetails = splits.map((s) => ({
+        userName: splitLabelMap.get(s.userId) || s.userId,
+        amount: s.amount,
+      }));
+
+      const category = inferCategory(draft.type, categories as BotCategory[]) || (categories as BotCategory[])[0];
+      if (!category) continue;
+
+      // Calculate next serial number
+      const [serialRow] = await sql`
+        SELECT COALESCE(MAX(serial_no), 0) + 1 AS next_serial FROM expenses WHERE month = ${month}
+      `;
+      const nextSerial = Number(serialRow.next_serial);
+
+      // Insert expense
+      await sql`
+        INSERT INTO expenses (date, month, description, amount, category_id, paid_by, split_type, splits, created_at, serial_no)
+        VALUES (${draft.date}, ${month}, ${draft.type + " (via Telegram)"}, ${effectiveAmount}, ${category.id}, ${payer.id}, ${draft.splits.length > 0 ? "custom" : "equal"}, ${JSON.stringify(splits)}, ${new Date().toISOString()}, ${nextSerial})
+      `;
+
+      savedEntries.push({
+        draft: { ...draft, amount: effectiveAmount },
+        splitUsers,
+        splits: splitDetails,
+      });
+    }
+
+    if (savedEntries.length === 0) {
+      await bot.sendMessage(chatId, formatParseError());
+      return;
+    }
+
+    if (savedEntries.length === 1) {
+      const message = formatSingleExpenseResponse({
+        draft: savedEntries[0].draft,
+        payerName: payer.name,
+        splitUsers: savedEntries[0].splitUsers,
+        splits: savedEntries[0].splits,
+        perHeadInfo: savedEntries[0].draft.userSelectionMode === "default-all" && typeof savedEntries[0].draft.perHeadAmount === "number"
+          ? { amount: savedEntries[0].draft.perHeadAmount, count: savedEntries[0].splitUsers.length }
+          : undefined,
+      });
+      await bot.sendMessage(chatId, message);
+    } else {
+      const defaultedToActive = savedEntries.some((e) => e.draft.userSelectionMode === "default-all");
+      await bot.sendMessage(chatId, formatMultipleExpensesResponse(savedEntries.map((s) => ({ draft: s.draft })), defaultedToActive));
+    }
+  } catch (error) {
+    console.error("Telegram message handling failed:", error);
+    await bot.sendMessage(chatId, formatParseError());
+  }
 }
 
 // ─── Seed Default Data ────────────────────────────────────────────────────────
@@ -84,6 +333,21 @@ async function seedDefaults() {
   `;
   await sql`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS settled_at TEXT`;
 
+  // ── Create active_users_by_month table ───────────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS active_users_by_month (
+      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+      month TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_at TEXT NOT NULL DEFAULT now()::text
+    )
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS active_users_month_user_unique
+    ON active_users_by_month (month, user_id)
+  `;
+
   // ── STEP 1: Remove duplicate categories FIRST ───────────────────────────────
   // CRITICAL ORDER: This DELETE must run BEFORE the CREATE UNIQUE INDEX below.
   // PostgreSQL will reject CREATE UNIQUE INDEX if the table still has duplicates.
@@ -148,6 +412,85 @@ app.get("/api/health", (_req: Request, res: Response) => {
     env: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
   });
+});
+
+// ─── Telegram Webhook ─────────────────────────────────────────────────────────
+app.post("/api/telegram/webhook", async (req: Request, res: Response) => {
+  try {
+    await handleTelegramUpdate(req.body);
+    res.sendStatus(200);
+  } catch (error) {
+    console.error("Telegram webhook processing failed:", error);
+    res.sendStatus(500);
+  }
+});
+
+// ─── Active Users ─────────────────────────────────────────────────────────────
+app.get("/api/active-users", async (req: Request, res: Response) => {
+  try {
+    const sql = getSql();
+    await seedDefaults(); // Ensure tables exist
+    const month = String(req.query.month || "");
+    if (!month) {
+      return res.status(400).json({ error: "month query param is required (YYYY-MM)" });
+    }
+
+    const allUsers = await sql`SELECT * FROM users ORDER BY name`;
+    let activeUsers: any[] = [];
+    try {
+      const links = await sql`
+        SELECT user_id FROM active_users_by_month
+        WHERE month = ${month} AND is_active = TRUE
+      `;
+      if (links.length > 0) {
+        const activeIds = new Set(links.map((l: any) => l.user_id));
+        activeUsers = allUsers.filter((u: any) => activeIds.has(u.id));
+      }
+    } catch (error) {
+      console.error("Failed to read active users for month, defaulting to all users:", error);
+    }
+
+    const effective = activeUsers.length > 0 ? activeUsers : allUsers;
+    res.json({
+      month,
+      userIds: effective.map((u: any) => u.id),
+      users: effective,
+      source: activeUsers.length > 0 ? "custom" : "default-all",
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/active-users", async (req: Request, res: Response) => {
+  try {
+    const sql = getSql();
+    await seedDefaults(); // Ensure tables exist
+    const month = String(req.body?.month || "");
+    const userIds = Array.isArray(req.body?.userIds) ? req.body.userIds.map(String) : [];
+
+    if (!month) {
+      return res.status(400).json({ error: "month is required" });
+    }
+
+    // Delete existing entries for this month
+    await sql`DELETE FROM active_users_by_month WHERE month = ${month}`;
+
+    // Insert new active users
+    if (userIds.length > 0) {
+      for (const userId of userIds) {
+        await sql`
+          INSERT INTO active_users_by_month (month, user_id, is_active, updated_at)
+          VALUES (${month}, ${userId}, TRUE, ${new Date().toISOString()})
+          ON CONFLICT (month, user_id) DO UPDATE SET is_active = TRUE, updated_at = ${new Date().toISOString()}
+        `;
+      }
+    }
+
+    res.json({ success: true, month, userIds });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── GET /api/state ───────────────────────────────────────────────────────────
