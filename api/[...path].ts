@@ -1323,6 +1323,18 @@ app.delete("/api/months/:month", async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/months/:month/delete — delete month completely
+app.delete("/api/months/:month/delete", async (req: Request, res: Response) => {
+  try {
+    const sql = getSql();
+    const { month } = req.params;
+    await sql`DELETE FROM month_status WHERE month = ${month}`;
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Failed to delete month" });
+  }
+});
+
 // ─── Settlements ──────────────────────────────────────────────────────────────
 
 app.post("/api/settlements", async (req: Request, res: Response) => {
