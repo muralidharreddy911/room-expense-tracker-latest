@@ -780,9 +780,6 @@ async function handleTelegramUpdate(update: any): Promise<void> {
   }
 
   // Handle regular message
-    return;
-  }
-
   const msg = update.message;
   if (!msg || !msg.text) return;
 
