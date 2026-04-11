@@ -3,7 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import TelegramBot from "node-telegram-bot-api";
 import { format } from "date-fns";
-import { parseExpenseMessage, inferCategory, type ParsedExpenseDraft, type ParserUser } from "../server/services/expense-parser";
+import { parseExpenseMessage, inferCategory, type ParsedExpenseDraft, type ParserUser } from "./expense-parser";
 
 // ─── Raw SQL Client ───────────────────────────────────────────────────────────
 function getSql() {
