@@ -684,6 +684,7 @@ async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
     const payer = findUserByTelegramName(users as BotUser[], msg.from?.first_name || "", msg.from?.username);
     if (!payer) {
       console.log(`Telegram user not found: ${msg.from?.first_name} / @${msg.from?.username}`);
+      await bot.sendMessage(chatId, `❌ User "${msg.from?.first_name || msg.from?.username}" not found in the system.\n\nPlease ask your admin to add you with a matching name.`);
       return;
     }
 
@@ -795,7 +796,11 @@ async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
     }
   } catch (error) {
     console.error("Telegram message handling failed:", error);
-    await bot.sendMessage(chatId, formatParseError());
+    try {
+      await bot.sendMessage(chatId, formatParseError());
+    } catch (sendError) {
+      console.error("Failed to send error message:", sendError);
+    }
   }
 }
 
