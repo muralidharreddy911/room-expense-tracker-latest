@@ -654,10 +654,132 @@ async function sendTelegramMessage(token: string, chatId: number | string, text:
   }
 }
 
+// Helper to send message with undo button
+async function sendTelegramMessageWithUndo(token: string, chatId: number | string, text: string, expenseIds: string[]): Promise<void> {
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  const undoData = expenseIds.length === 1 ? `undo:${expenseIds[0]}` : `undo:${expenseIds.join(',').slice(0, 50)}`;
+  const replyMarkup = {
+    inline_keyboard: [[{ text: "↩️ Undo (30m)", callback_data: undoData }]]
+  };
+  const undoHint = `\n\n↩️ Tap Undo within 30 minutes to remove this expense${expenseIds.length > 1 ? 's' : ''}.`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: text + undoHint, reply_markup: replyMarkup }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      console.error(`Telegram API error: ${response.status}`, result);
+    }
+  } catch (err) {
+    console.error(`Failed to send Telegram message with undo:`, err);
+  }
+}
+
+// Helper to answer callback query
+async function answerCallbackQuery(token: string, callbackId: string, text?: string): Promise<void> {
+  const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: callbackId, text }),
+    });
+  } catch (err) {
+    console.error(`Failed to answer callback query:`, err);
+  }
+}
+
+// Helper to edit message (remove undo button after use)
+async function editMessageReplyMarkup(token: string, chatId: number | string, messageId: number): Promise<void> {
+  const url = `https://api.telegram.org/bot${token}/editMessageReplyMarkup`;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+  } catch (err) {
+    console.error(`Failed to edit message:`, err);
+  }
+}
+
+const UNDO_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+
 async function handleTelegramUpdate(update: any): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     console.log("TELEGRAM_BOT_TOKEN not set. Skipping telegram update.");
+    return;
+  }
+
+  // Handle callback query (undo button)
+  if (update.callback_query) {
+    const query = update.callback_query;
+    const callbackId = query.id;
+    const data = query.data || '';
+    const chatId = query.message?.chat?.id;
+    const messageId = query.message?.message_id;
+    
+    if (data.startsWith('undo:') && chatId) {
+      const expenseIdsStr = data.slice('undo:'.length);
+      const expenseIds = expenseIdsStr.split(',').filter(Boolean);
+      
+      if (expenseIds.length === 0) {
+        await answerCallbackQuery(token, callbackId, 'No expense to undo.');
+        return;
+      }
+      
+      const sql = getSql();
+      let deleted = 0;
+      const deletedItems: string[] = [];
+      
+      for (const expenseId of expenseIds) {
+        try {
+          // Check if expense exists and is within undo window
+          const [expense] = await sql`
+            SELECT id, description, amount, created_at FROM expenses WHERE id = ${expenseId}
+          `;
+          
+          if (!expense) {
+            continue;
+          }
+          
+          const createdAt = new Date(expense.created_at).getTime();
+          if (Date.now() - createdAt > UNDO_WINDOW_MS) {
+            await answerCallbackQuery(token, callbackId, '⌛ Undo window expired (30 minutes).');
+            if (messageId) await editMessageReplyMarkup(token, chatId, messageId);
+            return;
+          }
+          
+          // Delete the expense
+          await sql`DELETE FROM expenses WHERE id = ${expenseId}`;
+          deleted++;
+          deletedItems.push(`• ${expense.description} - ₹${Number(expense.amount).toFixed(2)}`);
+        } catch (err) {
+          console.error(`Failed to delete expense ${expenseId}:`, err);
+        }
+      }
+      
+      // Remove undo button from message
+      if (messageId) await editMessageReplyMarkup(token, chatId, messageId);
+      
+      if (deleted > 0) {
+        const details = deletedItems.length > 0 ? `\n\n${deletedItems.join('\n')}` : '';
+        await answerCallbackQuery(token, callbackId, `✅ Deleted ${deleted} expense(s)`);
+        await sendTelegramMessage(token, chatId, `✅ Undo successful. Deleted ${deleted} expense(s).${details}`);
+      } else {
+        await answerCallbackQuery(token, callbackId, '⚠️ Nothing to undo.');
+      }
+    } else {
+      await answerCallbackQuery(token, callbackId);
+    }
+    return;
+  }
+
+  // Handle regular message
     return;
   }
 
@@ -723,6 +845,7 @@ async function handleTelegramUpdate(update: any): Promise<void> {
     }
 
     const savedEntries: Array<{
+      expenseId: string;
       draft: ParsedExpenseDraft;
       splitUsers: string[];
       splits: Array<{ userName: string; amount: number }>;
@@ -780,13 +903,15 @@ async function handleTelegramUpdate(update: any): Promise<void> {
       `;
       const nextSerial = Number(serialRow.next_serial);
 
-      // Insert expense
-      await sql`
+      // Insert expense and get its ID
+      const [inserted] = await sql`
         INSERT INTO expenses (date, month, description, amount, category_id, paid_by, split_type, splits, created_at, serial_no)
         VALUES (${draft.date}, ${month}, ${draft.type + " (via Telegram)"}, ${effectiveAmount}, ${category.id}, ${payer.id}, ${draft.splits.length > 0 ? "custom" : "equal"}, ${JSON.stringify(splits)}, ${new Date().toISOString()}, ${nextSerial})
+        RETURNING id
       `;
 
       savedEntries.push({
+        expenseId: inserted.id,
         draft: { ...draft, amount: effectiveAmount },
         splitUsers,
         splits: splitDetails,
@@ -808,10 +933,11 @@ async function handleTelegramUpdate(update: any): Promise<void> {
           ? { amount: savedEntries[0].draft.perHeadAmount, count: savedEntries[0].splitUsers.length }
           : undefined,
       });
-      await sendTelegramMessage(token, chatId, message);
+      await sendTelegramMessageWithUndo(token, chatId, message, [savedEntries[0].expenseId]);
     } else {
       const defaultedToActive = savedEntries.some((e) => e.draft.userSelectionMode === "default-all");
-      await sendTelegramMessage(token, chatId, formatMultipleExpensesResponse(savedEntries.map((s) => ({ draft: s.draft })), defaultedToActive));
+      const expenseIds = savedEntries.map((e) => e.expenseId);
+      await sendTelegramMessageWithUndo(token, chatId, formatMultipleExpensesResponse(savedEntries.map((s) => ({ draft: s.draft })), defaultedToActive), expenseIds);
     }
   } catch (error) {
     console.error("Telegram message handling failed:", error);
