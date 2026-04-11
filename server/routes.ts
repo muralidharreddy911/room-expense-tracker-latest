@@ -2,11 +2,13 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { INITIAL_CATEGORIES } from "../client/src/lib/mock-data";
+import { invalidateActiveUsersCache, registerTelegramWebhookRoute } from "./services/telegram-bot-service";
 
 export function registerRoutes(
   httpServer: Server,
   app: Express
 ): Server {
+  registerTelegramWebhookRoute(app);
   
   // Seed Defaults Asynchronously
   (async () => {
@@ -46,6 +48,15 @@ export function registerRoutes(
   });
 
   // Users
+  app.get("/api/users", async (_req, res) => {
+    try {
+      const allUsers = await storage.getUsers();
+      res.json(allUsers);
+    } catch (e) {
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
   app.post("/api/users", async (req, res) => {
     try {
       const user = await storage.createUser(req.body);
@@ -65,6 +76,52 @@ export function registerRoutes(
       await storage.updateUserPassword(req.params.id, req.body.password);
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.get("/api/active-users", async (req, res) => {
+    try {
+      const month = String(req.query.month || "");
+      if (!month) {
+        res.status(400).json({ error: "month query param is required (YYYY-MM)" });
+        return;
+      }
+
+      const allUsers = await storage.getUsers();
+      let activeUsers: Awaited<ReturnType<typeof storage.getActiveUsers>> = [];
+      try {
+        activeUsers = await storage.getActiveUsers(month);
+      } catch (error) {
+        console.error("Failed to read active users for month, defaulting to all users:", error);
+      }
+      const effective = activeUsers.length > 0 ? activeUsers : allUsers;
+
+      res.json({
+        month,
+        userIds: effective.map((u) => u.id),
+        users: effective,
+        source: activeUsers.length > 0 ? "custom" : "default-all",
+      });
+    } catch (e) {
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  app.post("/api/active-users", async (req, res) => {
+    try {
+      const month = String(req.body?.month || "");
+      const userIds = Array.isArray(req.body?.userIds) ? req.body.userIds.map(String) : [];
+
+      if (!month) {
+        res.status(400).json({ error: "month is required" });
+        return;
+      }
+
+      await storage.setActiveUsers(month, userIds);
+      invalidateActiveUsersCache(month);
+      res.json({ success: true, month, userIds });
+    } catch (e) {
+      res.status(500).json({ error: "Failed" });
+    }
   });
 
   // Expenses
@@ -119,6 +176,14 @@ export function registerRoutes(
       const m = await storage.upsertMonthStatus(req.params.month, false);
       res.json(m);
     } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  // Delete month completely
+  app.delete("/api/months/:month/delete", async (req, res) => {
+    try {
+      await storage.deleteMonth(req.params.month);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message || "Failed to delete month" }); }
   });
 
   // Settlements

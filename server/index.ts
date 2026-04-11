@@ -2,6 +2,19 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { startTelegramBot } from "./services/telegram-bot-service";
+import { config as loadEnv } from "dotenv";
+import path from "path";
+import { existsSync } from "fs";
+
+loadEnv();
+
+if (!process.env.TELEGRAM_BOT_TOKEN) {
+  const botEnvPath = path.resolve(process.cwd(),  ".env");
+  if (existsSync(botEnvPath)) {
+    loadEnv({ path: botEnvPath, override: false });
+  }
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -65,6 +78,7 @@ export const setupApp = async () => {
   isSetup = true;
 
   registerRoutes(httpServer, app);
+  await startTelegramBot();
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

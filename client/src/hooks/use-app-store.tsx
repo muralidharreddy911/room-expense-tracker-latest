@@ -23,9 +23,12 @@ interface AppState {
   addMonth: (month: string) => Promise<void>;
   lockMonth: (month: string) => Promise<void>;
   unlockMonth: (month: string) => Promise<void>;
+  deleteMonth: (month: string) => Promise<void>;
   addSettlement: (settlement: Settlement) => Promise<void>;
   updateSettlement: (id: string, status: 'paid' | 'pending') => Promise<void>;
   updateUserPassword: (userId: string, newPassword: string) => Promise<boolean>;
+  getActiveUsersByMonth: (month: string) => Promise<string[]>;
+  setActiveUsersByMonth: (month: string, userIds: string[]) => Promise<void>;
   refreshState: () => Promise<void>;
 
   // Helpers
@@ -52,6 +55,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [activeUsersByMonth, setActiveUsersByMonthState] = useState<Record<string, string[]>>({});
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // ── Core state fetcher (extracted so it can be called after mutations) ──────
@@ -262,34 +266,82 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast({ title: `Month ${month} already exists`, variant: 'destructive' });
       return;
     }
+    // Optimistic update - add immediately for smooth UX
+    const tempId = `temp-${Date.now()}`;
+    setMonthStatus(prev => [...prev, { id: tempId, month, isLocked: false }]);
+    toast({ title: `Month ${month} activated` });
+    
     const res = await fetch('/api/months', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ month, isLocked: false }),
     });
     if (res.ok) {
-      await fetchState();
-      toast({ title: `Month ${month} activated` });
+      // Replace temp with real data in background
+      const newMonth = await res.json();
+      setMonthStatus(prev => prev.map(m => m.id === tempId ? newMonth : m));
+    } else {
+      // Rollback on failure
+      setMonthStatus(prev => prev.filter(m => m.id !== tempId));
+      toast({ title: 'Failed to add month', variant: 'destructive' });
     }
   };
 
   const lockMonth = async (month: string) => {
+    // Optimistic update
+    setMonthStatus(prev => prev.map(m => m.month === month ? { ...m, isLocked: true } : m));
+    toast({ title: `Month ${month} locked` });
+    
     const res = await fetch('/api/months', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ month, isLocked: true }),
     });
-    if (res.ok) {
-      await fetchState();
-      toast({ title: `Month ${month} locked` });
+    if (!res.ok) {
+      // Rollback on failure
+      setMonthStatus(prev => prev.map(m => m.month === month ? { ...m, isLocked: false } : m));
+      toast({ title: 'Failed to lock month', variant: 'destructive' });
     }
   };
 
   const unlockMonth = async (month: string) => {
+    // Optimistic update
+    setMonthStatus(prev => prev.map(m => m.month === month ? { ...m, isLocked: false } : m));
+    toast({ title: `Month ${month} unlocked` });
+    
     const res = await fetch(`/api/months/${encodeURIComponent(month)}`, { method: 'DELETE' });
-    if (res.ok) {
-      await fetchState();
-      toast({ title: `Month ${month} unlocked` });
+    if (!res.ok) {
+      // Rollback on failure
+      setMonthStatus(prev => prev.map(m => m.month === month ? { ...m, isLocked: true } : m));
+      toast({ title: 'Failed to unlock month', variant: 'destructive' });
+    }
+  };
+
+  const deleteMonth = async (month: string) => {
+    // Check if month has any expenses or settlements
+    const hasExpenses = expenses.some(e => e.month === month);
+    const hasSettlements = settlements.some(s => s.month === month);
+    if (hasExpenses || hasSettlements) {
+      toast({
+        title: 'Cannot delete month',
+        description: 'This month has expenses or settlements. Delete them first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    // Optimistic update - remove immediately
+    const deletedMonth = monthStatus.find(m => m.month === month);
+    setMonthStatus(prev => prev.filter(m => m.month !== month));
+    toast({ title: `Month ${month} deleted` });
+    
+    const res = await fetch(`/api/months/${encodeURIComponent(month)}/delete`, { method: 'DELETE' });
+    if (!res.ok) {
+      // Rollback on failure
+      if (deletedMonth) {
+        setMonthStatus(prev => [...prev, deletedMonth]);
+      }
+      const err = await res.json().catch(() => ({}));
+      toast({ title: 'Failed to delete month', description: err.error || '', variant: 'destructive' });
     }
   };
 
@@ -342,6 +394,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const getActiveUsersByMonth = useCallback(async (month: string): Promise<string[]> => {
+    if (activeUsersByMonth[month]) {
+      return activeUsersByMonth[month];
+    }
+
+    const res = await fetch(`/api/active-users?month=${encodeURIComponent(month)}`);
+    if (!res.ok) {
+      return users.map((u) => u.id);
+    }
+
+    const data = await res.json();
+    const userIds: string[] = data.userIds || [];
+    setActiveUsersByMonthState((prev) => ({ ...prev, [month]: userIds }));
+    return userIds;
+  }, [activeUsersByMonth, users]);
+
+  const setActiveUsersByMonth = useCallback(async (month: string, userIds: string[]): Promise<void> => {
+    setActiveUsersByMonthState((prev) => ({ ...prev, [month]: userIds }));
+
+    const res = await fetch('/api/active-users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, userIds }),
+    });
+
+    if (!res.ok) {
+      toast({ title: 'Failed to update active users', variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: `Active users updated for ${month}` });
+  }, [toast]);
+
   return (
     <AppContext.Provider value={{
       currentUser,
@@ -363,9 +448,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addMonth,
       lockMonth,
       unlockMonth,
+      deleteMonth,
       addSettlement,
       updateSettlement,
       updateUserPassword,
+      getActiveUsersByMonth,
+      setActiveUsersByMonth,
       refreshState,
       getExpensesByMonth,
       isMonthLocked,

@@ -14,13 +14,19 @@ export default function UserExpensesPage() {
     availableMonths, isMonthLocked
   } = useApp();
 
-  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  // For testing: default to 2026-01
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-01');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [viewMode, setViewMode] = useState<"all" | "payer">("all");
 
+  // Default to 2026-01 for testing, then most recent available month
   useEffect(() => {
-    if (availableMonths.length > 0 && !selectedMonth) {
-      setSelectedMonth(availableMonths[0]);
+    if (availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
+      if (availableMonths.includes('2026-01')) {
+        setSelectedMonth('2026-01');
+      } else {
+        setSelectedMonth(availableMonths[0]);
+      }
     }
   }, [availableMonths]);
 

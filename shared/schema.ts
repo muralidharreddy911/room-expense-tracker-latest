@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, jsonb, real, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, jsonb, real, integer, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -23,6 +23,20 @@ export const monthStatus = pgTable("month_status", {
   month: text("month").notNull().unique(), // YYYY-MM
   isLocked: boolean("is_locked").default(false),
 });
+
+export const activeUsersByMonth = pgTable(
+  "active_users_by_month",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    month: text("month").notNull(), // YYYY-MM
+    userId: text("user_id").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+  },
+  (table) => ({
+    monthUserUnique: uniqueIndex("active_users_month_user_unique").on(table.month, table.userId),
+  })
+);
 
 export const settlements = pgTable("settlements", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
