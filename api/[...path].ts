@@ -1,7 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { neon } from "@neondatabase/serverless";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import TelegramBot from "node-telegram-bot-api";
 import { format, parse, subDays } from "date-fns";
 
 // ─── Expense Parser Types ─────────────────────────────────────────────────────
@@ -634,14 +633,27 @@ function formatParseError(): string {
   ].join("\n");
 }
 
-async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
+// Helper to send Telegram message using fetch (more reliable in serverless)
+async function sendTelegramMessage(token: string, chatId: number, text: string): Promise<void> {
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Telegram API error: ${response.status} - ${errorText}`);
+  }
+}
+
+async function handleTelegramUpdate(update: any): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     console.log("TELEGRAM_BOT_TOKEN not set. Skipping telegram update.");
     return;
   }
 
-  const bot = new TelegramBot(token, { polling: false });
   const msg = update.message;
   if (!msg || !msg.text) return;
 
@@ -650,7 +662,7 @@ async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
 
   // Handle /start command
   if (text === "/start") {
-    await bot.sendMessage(chatId, [
+    await sendTelegramMessage(token, chatId, [
       "🏠 Room Expense Bot",
       "",
       "Send natural messages like:",
@@ -663,7 +675,7 @@ async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
 
   // Handle /help command
   if (text === "/help") {
-    await bot.sendMessage(chatId, formatParseError());
+    await sendTelegramMessage(token, chatId, formatParseError());
     return;
   }
 
@@ -684,7 +696,7 @@ async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
     const payer = findUserByTelegramName(users as BotUser[], msg.from?.first_name || "", msg.from?.username);
     if (!payer) {
       console.log(`Telegram user not found: ${msg.from?.first_name} / @${msg.from?.username}`);
-      await bot.sendMessage(chatId, `❌ User "${msg.from?.first_name || msg.from?.username}" not found in the system.\n\nPlease ask your admin to add you with a matching name.`);
+      await sendTelegramMessage(token, chatId, `❌ User "${msg.from?.first_name || msg.from?.username}" not found in the system.\n\nPlease ask your admin to add you with a matching name.`);
       return;
     }
 
@@ -698,7 +710,7 @@ async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
 
     if (drafts.length === 0) {
       if (/\d/.test(text)) {
-        await bot.sendMessage(chatId, formatParseError());
+        await sendTelegramMessage(token, chatId, formatParseError());
       }
       return;
     }
@@ -775,7 +787,7 @@ async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
     }
 
     if (savedEntries.length === 0) {
-      await bot.sendMessage(chatId, formatParseError());
+      await sendTelegramMessage(token, chatId, formatParseError());
       return;
     }
 
@@ -789,15 +801,15 @@ async function handleTelegramUpdate(update: TelegramBot.Update): Promise<void> {
           ? { amount: savedEntries[0].draft.perHeadAmount, count: savedEntries[0].splitUsers.length }
           : undefined,
       });
-      await bot.sendMessage(chatId, message);
+      await sendTelegramMessage(token, chatId, message);
     } else {
       const defaultedToActive = savedEntries.some((e) => e.draft.userSelectionMode === "default-all");
-      await bot.sendMessage(chatId, formatMultipleExpensesResponse(savedEntries.map((s) => ({ draft: s.draft })), defaultedToActive));
+      await sendTelegramMessage(token, chatId, formatMultipleExpensesResponse(savedEntries.map((s) => ({ draft: s.draft })), defaultedToActive));
     }
   } catch (error) {
     console.error("Telegram message handling failed:", error);
     try {
-      await bot.sendMessage(chatId, formatParseError());
+      await sendTelegramMessage(token, chatId, formatParseError());
     } catch (sendError) {
       console.error("Failed to send error message:", sendError);
     }
