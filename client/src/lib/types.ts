@@ -51,3 +51,20 @@ export interface MonthStatus {
   month: string; // YYYY-MM
   isLocked: boolean;
 }
+
+export type CleaningType = 'room_cleaning' | 'vessel_cleaning';
+export type AttendanceStatus = 'pending_approval' | 'approved' | 'completed' | 'rejected';
+
+export interface CleaningAttendance {
+  id: string;
+  date: string; // ISO 8601
+  month: string; // YYYY-MM
+  cleaningType: CleaningType;
+  userId: string;
+  remarks?: string;
+  status: AttendanceStatus;
+  approvedBy?: string; // userId
+  approvedAt?: string; // ISO 8601
+  createdAt: string;
+}
+

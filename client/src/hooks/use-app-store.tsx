@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { User, Expense, Category, MonthStatus, Settlement, Role } from '../lib/types';
+import { User, Expense, Category, MonthStatus, Settlement, Role, CleaningAttendance } from '../lib/types';
 import { useToast } from './use-toast';
 
 interface AppState {
@@ -9,6 +9,7 @@ interface AppState {
   categories: Category[];
   monthStatus: MonthStatus[];
   settlements: Settlement[];
+  cleaningAttendance: CleaningAttendance[];
   isLoading: boolean;
 
   login: (username: string, password?: string) => void;
@@ -29,6 +30,9 @@ interface AppState {
   updateUserPassword: (userId: string, newPassword: string) => Promise<boolean>;
   getActiveUsersByMonth: (month: string) => Promise<string[]>;
   setActiveUsersByMonth: (month: string, userIds: string[]) => Promise<void>;
+  createCleaningAttendance: (attendance: Omit<CleaningAttendance, 'id' | 'createdAt'>) => Promise<void>;
+  updateCleaningAttendanceStatus: (id: string, status: string, approvedBy?: string) => Promise<void>;
+  getCleaningAttendanceByMonth: (month: string) => CleaningAttendance[];
   refreshState: () => Promise<void>;
 
   // Helpers
@@ -55,6 +59,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [cleaningAttendance, setCleaningAttendance] = useState<CleaningAttendance[]>([]);
   const [activeUsersByMonth, setActiveUsersByMonthState] = useState<Record<string, string[]>>({});
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -70,6 +75,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setExpenses(data.expenses || []);
       setMonthStatus(data.monthStatus || []);
       setSettlements(data.settlements || []);
+      setCleaningAttendance(data.cleaningAttendance || []);
     } catch (err) {
       console.error('Failed to fetch state:', err);
     } finally {
@@ -427,6 +433,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast({ title: `Active users updated for ${month}` });
   }, [toast]);
 
+  // ── Cleaning Attendance ─────────────────────────────────────────────────────
+  const createCleaningAttendance = async (attendance: Omit<CleaningAttendance, 'id' | 'createdAt'>) => {
+    const payload = { ...attendance, createdAt: new Date().toISOString() };
+    const res = await fetch('/api/cleaning-attendance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      await fetchState();
+      toast({ title: 'Attendance recorded' });
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast({ title: 'Failed to record attendance', description: err.error || '', variant: 'destructive' });
+    }
+  };
+
+  const updateCleaningAttendanceStatus = async (id: string, status: string, approvedBy?: string) => {
+    const res = await fetch(`/api/cleaning-attendance/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, approvedBy }),
+    });
+    if (res.ok) {
+      await fetchState();
+      toast({ title: `Attendance ${status}` });
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast({ title: 'Failed to update attendance', description: err.error || '', variant: 'destructive' });
+    }
+  };
+
+  const getCleaningAttendanceByMonth = (month: string) => 
+    cleaningAttendance.filter(a => a.month === month);
+
   return (
     <AppContext.Provider value={{
       currentUser,
@@ -435,6 +476,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       categories,
       monthStatus,
       settlements,
+      cleaningAttendance,
       isLoading,
       login,
       logout,
@@ -454,6 +496,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateUserPassword,
       getActiveUsersByMonth,
       setActiveUsersByMonth,
+      createCleaningAttendance,
+      updateCleaningAttendanceStatus,
+      getCleaningAttendanceByMonth,
       refreshState,
       getExpensesByMonth,
       isMonthLocked,

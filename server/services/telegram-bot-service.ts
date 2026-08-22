@@ -638,7 +638,11 @@ export async function startTelegramBot(): Promise<void> {
   }
 
   const useWebhook = process.env.TELEGRAM_USE_WEBHOOK === "true" || Boolean(process.env.VERCEL);
-  botInstance = new TelegramBot(token, { polling: !useWebhook });
+  // rejectUnauthorized:false works around SSL interception by corporate proxies/antivirus on local dev
+  const requestOptions = process.env.NODE_ENV !== "production"
+    ? { agentOptions: { rejectUnauthorized: false } }
+    : undefined;
+  botInstance = new TelegramBot(token, { polling: !useWebhook, request: requestOptions as any });
 
   if (useWebhook && process.env.TELEGRAM_WEBHOOK_URL) {
     try {

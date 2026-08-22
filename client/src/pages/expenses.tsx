@@ -300,8 +300,15 @@ export default function ExpensesPage() {
 
               // Only the payer can delete/edit, only in unlocked months
               const isPayer = currentUser?.id === expense.paidBy;
+              
+              // Check 7-day edit window: can only edit if expense was created within last 7 days
+              const expenseCreatedDate = expense.createdAt ? parseISO(expense.createdAt) : null;
+              const now = new Date();
+              const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+              const isWithinEditWindow = expenseCreatedDate && expenseCreatedDate >= sevenDaysAgo;
+              
               const canDelete = !isLocked && isPayer;
-              const canEdit = !isLocked && isPayer;
+              const canEdit = !isLocked && isPayer && isWithinEditWindow;
 
               return (
                 <Card
@@ -364,7 +371,7 @@ export default function ExpensesPage() {
                       </div>
 
                       {/* Edit button */}
-                      {canEdit ? (
+                      {isPayer ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -372,11 +379,14 @@ export default function ExpensesPage() {
                               size="icon"
                               className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"
                               onClick={() => setExpenseToEdit(expense)}
+                              disabled={!canEdit}
                             >
                               <Pencil className="w-4 h-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent><p>Edit expense</p></TooltipContent>
+                          <TooltipContent>
+                            <p>{canEdit ? 'Edit expense' : 'Editing is allowed only within 7 days from the expense date.'}</p>
+                          </TooltipContent>
                         </Tooltip>
                       ) : null}
 

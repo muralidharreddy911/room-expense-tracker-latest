@@ -1,6 +1,6 @@
-import { users, categories, monthStatus, settlements, expenses, activeUsersByMonth, type User, type InsertUser } from "@shared/schema";
+import { users, categories, monthStatus, settlements, expenses, activeUsersByMonth, cleaningAttendance, type User, type InsertUser, type CleaningAttendanceRecord } from "@shared/schema";
 import { db } from "./db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -34,6 +34,12 @@ export interface IStorage {
   // Settlements
   createSettlement(settlement: any): Promise<any>;
   updateSettlementStatus(id: string, status: string): Promise<any>;
+
+  // Cleaning Attendance
+  createCleaningAttendance(attendance: any): Promise<any>;
+  updateCleaningAttendanceStatus(id: string, status: string, approvedBy?: string): Promise<any>;
+  getCleaningAttendanceByMonth(month: string): Promise<any[]>;
+  getCleaningAttendance(id: string): Promise<any | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -65,12 +71,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAppState(): Promise<any> {
-    const [allUsers, allCategories, allExpenses, allMonthStatus, allSettlements] = await Promise.all([
+    const [allUsers, allCategories, allExpenses, allMonthStatus, allSettlements, allCleaningAttendance] = await Promise.all([
       db.select().from(users),
       db.select().from(categories),
       db.select().from(expenses),
       db.select().from(monthStatus),
-      db.select().from(settlements)
+      db.select().from(settlements),
+      db.select().from(cleaningAttendance)
     ]);
 
     return {
@@ -78,7 +85,8 @@ export class DatabaseStorage implements IStorage {
       categories: allCategories,
       expenses: allExpenses,
       monthStatus: allMonthStatus,
-      settlements: allSettlements
+      settlements: allSettlements,
+      cleaningAttendance: allCleaningAttendance
     };
   }
 
@@ -160,6 +168,31 @@ export class DatabaseStorage implements IStorage {
   async updateSettlementStatus(id: string, status: string): Promise<any> {
     const [updated] = await db.update(settlements).set({ status }).where(eq(settlements.id, id)).returning();
     return updated;
+  }
+
+  // Cleaning Attendance Methods
+  async createCleaningAttendance(attendance: any): Promise<any> {
+    const [created] = await db.insert(cleaningAttendance).values(attendance).returning();
+    return created;
+  }
+
+  async updateCleaningAttendanceStatus(id: string, status: string, approvedBy?: string): Promise<any> {
+    const updateData: any = { status };
+    if (approvedBy) {
+      updateData.approvedBy = approvedBy;
+      updateData.approvedAt = new Date().toISOString();
+    }
+    const [updated] = await db.update(cleaningAttendance).set(updateData).where(eq(cleaningAttendance.id, id)).returning();
+    return updated;
+  }
+
+  async getCleaningAttendanceByMonth(month: string): Promise<any[]> {
+    return await db.select().from(cleaningAttendance).where(eq(cleaningAttendance.month, month));
+  }
+
+  async getCleaningAttendance(id: string): Promise<any | undefined> {
+    const [record] = await db.select().from(cleaningAttendance).where(eq(cleaningAttendance.id, id));
+    return record;
   }
 }
 

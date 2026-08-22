@@ -136,6 +136,17 @@ export function EditExpenseDialog({ expense, open, onOpenChange }: EditExpenseDi
       return;
     }
 
+    // Check 7-day edit window
+    const expenseCreatedDate = expense.createdAt ? parseISO(expense.createdAt) : null;
+    if (expenseCreatedDate) {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (expenseCreatedDate < sevenDaysAgo) {
+        form.setError("date", { message: "Editing is allowed only within 7 days from the expense date." });
+        return;
+      }
+    }
+
     const newMonth = format(data.date, "yyyy-MM");
     if (newMonth !== expenseMonth) {
       form.setError("date", {

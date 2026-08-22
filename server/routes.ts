@@ -201,5 +201,47 @@ export function registerRoutes(
     } catch (e) { res.status(500).json({ error: "Failed" }); }
   });
 
+  // Cleaning Attendance
+  app.post("/api/cleaning-attendance", async (req, res) => {
+    try {
+      const attendance = await storage.createCleaningAttendance(req.body);
+      res.json(attendance);
+    } catch (e) { res.status(500).json({ error: "Failed to create attendance" }); }
+  });
+
+  app.get("/api/cleaning-attendance", async (req, res) => {
+    try {
+      const month = String(req.query.month || "");
+      let records;
+      if (month) {
+        records = await storage.getCleaningAttendanceByMonth(month);
+      } else {
+        // If no month specified, get all
+        const state = await storage.getAppState();
+        records = state.cleaningAttendance;
+      }
+      res.json(records);
+    } catch (e) { res.status(500).json({ error: "Failed to fetch attendance" }); }
+  });
+
+  app.get("/api/cleaning-attendance/:id", async (req, res) => {
+    try {
+      const record = await storage.getCleaningAttendance(req.params.id);
+      if (!record) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      res.json(record);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.put("/api/cleaning-attendance/:id", async (req, res) => {
+    try {
+      const { status, approvedBy } = req.body;
+      const updated = await storage.updateCleaningAttendanceStatus(req.params.id, status, approvedBy);
+      res.json(updated);
+    } catch (e) { res.status(500).json({ error: "Failed to update attendance" }); }
+  });
+
   return httpServer;
 }
