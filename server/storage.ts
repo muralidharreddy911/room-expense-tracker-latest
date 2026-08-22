@@ -184,8 +184,38 @@ export class DatabaseStorage implements IStorage {
 
   // Cleaning Attendance Methods
   async createCleaningAttendance(attendance: any): Promise<any> {
-    const [created] = await db.insert(cleaningAttendance).values(attendance).returning();
-    return created;
+    // Validate required fields
+    const requiredFields = ['date', 'month', 'cleaningType', 'userId', 'status', 'createdAt'];
+    const missingFields = requiredFields.filter(field => !(field in attendance));
+    
+    if (missingFields.length > 0) {
+      throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+    }
+
+    // Log field types and values for debugging
+    console.log('Cleaning attendance insert values:');
+    console.log('  date:', typeof attendance.date, attendance.date);
+    console.log('  month:', typeof attendance.month, attendance.month);
+    console.log('  cleaningType:', typeof attendance.cleaningType, attendance.cleaningType);
+    console.log('  userId:', typeof attendance.userId, attendance.userId);
+    console.log('  remarks:', typeof attendance.remarks, attendance.remarks);
+    console.log('  status:', typeof attendance.status, attendance.status);
+    console.log('  createdAt:', typeof attendance.createdAt, attendance.createdAt);
+    console.log('  approvedBy:', typeof attendance.approvedBy, attendance.approvedBy);
+    console.log('  approvedAt:', typeof attendance.approvedAt, attendance.approvedAt);
+
+    try {
+      const [created] = await db.insert(cleaningAttendance).values(attendance).returning();
+      console.log('Successfully inserted attendance record:', created);
+      return created;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error('Drizzle insert error:', errMsg);
+      if (errMsg.includes('column') || errMsg.includes('does not exist')) {
+        console.error('This looks like a schema/table issue. Check if cleaningAttendance table exists.');
+      }
+      throw err;
+    }
   }
 
   async updateCleaningAttendanceStatus(id: string, status: string, approvedBy?: string): Promise<any> {

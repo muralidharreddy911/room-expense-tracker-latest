@@ -45,6 +45,7 @@ export const settlements = pgTable("settlements", {
   amount: real("amount").notNull(),
   status: text("status").notNull().default("pending"),
   month: text("month").notNull(),
+  settledAt: text("settled_at"),
   createdAt: text("created_at").notNull(),
 });
 

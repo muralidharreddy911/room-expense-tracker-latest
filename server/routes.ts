@@ -206,15 +206,23 @@ export function registerRoutes(
   // Cleaning Attendance
   app.post("/api/cleaning-attendance", async (req, res) => {
     try {
+      console.log("POST /api/cleaning-attendance - Request body:", JSON.stringify(req.body, null, 2));
       const attendance = await storage.createCleaningAttendance(req.body);
+      console.log("Attendance created successfully:", attendance);
       res.json(attendance);
     } catch (e) { 
       const errorMsg = e instanceof Error ? e.message : String(e);
-      console.error("Failed to create attendance:", errorMsg, "Payload:", req.body);
+      const stack = e instanceof Error ? e.stack : '';
+      console.error("Failed to create attendance:");
+      console.error("Error:", errorMsg);
+      console.error("Stack:", stack);
+      console.error("Request body:", JSON.stringify(req.body, null, 2));
       
       let details = errorMsg;
       if (errorMsg.includes('does not exist') || errorMsg.includes('cleaning_attendance')) {
         details = "Database table not found. Run 'npm run db:push' to create the database schema.";
+      } else if (errorMsg.includes('column') || errorMsg.includes('Column')) {
+        details = "Database column error: " + errorMsg;
       }
       
       res.status(500).json({ error: "Failed to create attendance", details }); 

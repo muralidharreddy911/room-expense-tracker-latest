@@ -436,19 +436,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── Cleaning Attendance ─────────────────────────────────────────────────────
   const createCleaningAttendance = async (attendance: Omit<CleaningAttendance, 'id' | 'createdAt'>) => {
     const payload = { ...attendance, createdAt: new Date().toISOString() };
+    console.log('Submitting attendance:', payload);
     const res = await fetch('/api/cleaning-attendance', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    
+    console.log('Response status:', res.status, 'ok:', res.ok);
+    
     if (res.ok) {
       await fetchState();
       toast({ title: 'Attendance recorded' });
     } else {
-      const err = await res.json().catch(() => ({}));
-      const errorMsg = err.details || err.error || 'Unknown error';
+      let errorMsg = 'Unknown error';
+      let rawBody = '';
+      try {
+        rawBody = await res.text();
+        console.log('Raw response body:', rawBody);
+        const err = JSON.parse(rawBody);
+        errorMsg = err.details || err.error || errorMsg;
+      } catch (parseErr) {
+        console.error('Failed to parse response:', parseErr, 'Raw:', rawBody);
+        errorMsg = `HTTP ${res.status}: ${rawBody.substring(0, 200)}`;
+      }
+      
       toast({ title: 'Failed to record attendance', description: errorMsg, variant: 'destructive' });
-      console.error('Attendance submission error:', err, 'Payload:', payload);
+      console.error('Attendance submission failed:', { status: res.status, errorMsg, payload });
     }
   };
 
