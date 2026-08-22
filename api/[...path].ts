@@ -1021,6 +1021,21 @@ async function seedDefaults() {
   `;
   await sql`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS settled_at TEXT`;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS cleaning_attendance (
+      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+      date TEXT NOT NULL,
+      month TEXT NOT NULL,
+      cleaning_type TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      remarks TEXT,
+      status TEXT NOT NULL DEFAULT 'pending_approval',
+      approved_by TEXT,
+      approved_at TEXT,
+      created_at TEXT NOT NULL
+    )
+  `;
+
   // ── Create active_users_by_month table ───────────────────────────────────────
   await sql`
     CREATE TABLE IF NOT EXISTS active_users_by_month (
@@ -1186,7 +1201,7 @@ app.get("/api/state", async (_req: Request, res: Response) => {
   try {
     const sql = getSql();
     await seedDefaults();
-    const [users, categories, expenses, monthStatus, settlements] = await Promise.all([
+    const [users, categories, expenses, monthStatus, settlements, cleaningAttendance] = await Promise.all([
       sql`SELECT * FROM users ORDER BY name`,
       sql`SELECT *, is_default AS "isDefault" FROM categories ORDER BY name`,
       sql`
@@ -1209,8 +1224,18 @@ app.get("/api/state", async (_req: Request, res: Response) => {
         FROM settlements
         ORDER BY created_at DESC
       `,
+      sql`
+        SELECT *,
+          cleaning_type AS "cleaningType",
+          user_id       AS "userId",
+          approved_by   AS "approvedBy",
+          approved_at   AS "approvedAt",
+          created_at    AS "createdAt"
+        FROM cleaning_attendance
+        ORDER BY date DESC, created_at DESC
+      `,
     ]);
-    res.json({ users, categories, expenses, monthStatus, settlements });
+    res.json({ users, categories, expenses, monthStatus, settlements, cleaningAttendance });
   } catch (e: any) {
     console.error("GET /api/state error:", e);
     res.status(500).json({ error: e.message });
@@ -1522,6 +1547,89 @@ app.put("/api/settlements/:id", async (req: Request, res: Response) => {
     res.json(item);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Cleaning Attendance ──────────────────────────────────────────────────────
+
+app.post("/api/cleaning-attendance", async (req: Request, res: Response) => {
+  try {
+    const sql = getSql();
+    await seedDefaults();
+    const { date, month, cleaningType, userId, remarks, status, createdAt } = req.body;
+    const [item] = await sql`
+      INSERT INTO cleaning_attendance
+        (date, month, cleaning_type, user_id, remarks, status, created_at)
+      VALUES
+        (${date}, ${month}, ${cleaningType}, ${userId}, ${remarks || null}, ${status || "pending_approval"}, ${createdAt || new Date().toISOString()})
+      RETURNING *,
+        cleaning_type AS "cleaningType",
+        user_id       AS "userId",
+        approved_by   AS "approvedBy",
+        approved_at   AS "approvedAt",
+        created_at    AS "createdAt"
+    `;
+    res.json(item);
+  } catch (e: any) {
+    console.error("POST /api/cleaning-attendance error:", e);
+    res.status(500).json({ error: e.message || "Failed to create attendance" });
+  }
+});
+
+app.get("/api/cleaning-attendance", async (req: Request, res: Response) => {
+  try {
+    const sql = getSql();
+    await seedDefaults();
+    const month = String(req.query.month || "");
+    const records = month
+      ? await sql`
+          SELECT *,
+            cleaning_type AS "cleaningType",
+            user_id       AS "userId",
+            approved_by   AS "approvedBy",
+            approved_at   AS "approvedAt",
+            created_at    AS "createdAt"
+          FROM cleaning_attendance
+          WHERE month = ${month}
+          ORDER BY date DESC, created_at DESC
+        `
+      : await sql`
+          SELECT *,
+            cleaning_type AS "cleaningType",
+            user_id       AS "userId",
+            approved_by   AS "approvedBy",
+            approved_at   AS "approvedAt",
+            created_at    AS "createdAt"
+          FROM cleaning_attendance
+          ORDER BY date DESC, created_at DESC
+        `;
+    res.json(records);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Failed to fetch attendance" });
+  }
+});
+
+app.put("/api/cleaning-attendance/:id", async (req: Request, res: Response) => {
+  try {
+    const sql = getSql();
+    await seedDefaults();
+    const { status, approvedBy } = req.body;
+    const approvedAt = approvedBy ? new Date().toISOString() : null;
+    const [item] = await sql`
+      UPDATE cleaning_attendance
+      SET status = ${status}, approved_by = ${approvedBy || null}, approved_at = ${approvedAt}
+      WHERE id = ${req.params.id}
+      RETURNING *,
+        cleaning_type AS "cleaningType",
+        user_id       AS "userId",
+        approved_by   AS "approvedBy",
+        approved_at   AS "approvedAt",
+        created_at    AS "createdAt"
+    `;
+    if (!item) return res.status(404).json({ error: "Attendance not found" });
+    res.json(item);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Failed to update attendance" });
   }
 });
 
