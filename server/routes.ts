@@ -43,7 +43,9 @@ export function registerRoutes(
       const state = await storage.getAppState();
       res.json(state);
     } catch (e) {
-      res.status(500).json({ error: "Failed to load state" });
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      console.error("Failed to load state:", errorMsg);
+      res.status(500).json({ error: "Failed to load state", details: errorMsg });
     }
   });
 
@@ -206,7 +208,17 @@ export function registerRoutes(
     try {
       const attendance = await storage.createCleaningAttendance(req.body);
       res.json(attendance);
-    } catch (e) { res.status(500).json({ error: "Failed to create attendance" }); }
+    } catch (e) { 
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      console.error("Failed to create attendance:", errorMsg, "Payload:", req.body);
+      
+      let details = errorMsg;
+      if (errorMsg.includes('does not exist') || errorMsg.includes('cleaning_attendance')) {
+        details = "Database table not found. Run 'npm run db:push' to create the database schema.";
+      }
+      
+      res.status(500).json({ error: "Failed to create attendance", details }); 
+    }
   });
 
   app.get("/api/cleaning-attendance", async (req, res) => {

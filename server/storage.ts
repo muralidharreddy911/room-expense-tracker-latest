@@ -71,14 +71,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAppState(): Promise<any> {
-    const [allUsers, allCategories, allExpenses, allMonthStatus, allSettlements, allCleaningAttendance] = await Promise.all([
+    const [allUsers, allCategories, allExpenses, allMonthStatus, allSettlements] = await Promise.all([
       db.select().from(users),
       db.select().from(categories),
       db.select().from(expenses),
       db.select().from(monthStatus),
       db.select().from(settlements),
-      db.select().from(cleaningAttendance)
     ]);
+
+    // Try to fetch cleaning attendance, but don't fail if table doesn't exist
+    let allCleaningAttendance: any[] = [];
+    try {
+      allCleaningAttendance = await db.select().from(cleaningAttendance);
+    } catch (err) {
+      // Table might not exist yet - log and continue
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      if (!errorMsg.includes('does not exist')) {
+        // Only log if it's not a "table doesn't exist" error
+        console.warn("Warning: Could not fetch cleaning attendance:", errorMsg);
+      }
+    }
 
     return {
       users: allUsers,

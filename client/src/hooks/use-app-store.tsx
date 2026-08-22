@@ -446,7 +446,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast({ title: 'Attendance recorded' });
     } else {
       const err = await res.json().catch(() => ({}));
-      toast({ title: 'Failed to record attendance', description: err.error || '', variant: 'destructive' });
+      const errorMsg = err.details || err.error || 'Unknown error';
+      toast({ title: 'Failed to record attendance', description: errorMsg, variant: 'destructive' });
+      console.error('Attendance submission error:', err, 'Payload:', payload);
     }
   };
 
